@@ -194,6 +194,19 @@ bool sendBatchOverLora(const String &meshPacket) {
   loraDoc["fromSeq"] = sourceDoc["fromSeq"].as<uint32_t>();
   loraDoc["toSeq"] = sourceDoc["toSeq"].as<uint32_t>();
   loraDoc["sentAt"] = meshDebug.getMeshTime() / 1000UL;
+
+  // UI connectivity order:
+  // [BME280-DHT11, BME280-DHT22, BME280-DS18B20,
+  //  DHT11-DHT22, DHT11-DS18B20, DHT22-DS18B20,
+  //  DS18B20-LoRaReceiver].
+  bool meshConnectivity[6];
+  meshRouting.getProjectConnectivity(meshConnectivity);
+  JsonArray connectivity = loraDoc.createNestedArray("conn");
+  for (uint8_t i = 0; i < 6; i++) {
+    connectivity.add(meshConnectivity[i] ? 1 : 0);
+  }
+  connectivity.add(isLoraReceiverFresh() ? 1 : 0);
+
   loraDoc["records"].set(sourceDoc["records"]);
 
   String packet;

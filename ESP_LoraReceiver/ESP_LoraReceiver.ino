@@ -12,10 +12,12 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 // The receiver keeps only the latest delivered value for each sensor on the
 // OLED, but every LoRa BATCH may contain several historical records.
 const char *SENSOR_NAMES[] = {"DS18B20", "DHT11", "DHT22", "BME280"};
+const char *UI_SENSOR_NAMES[] = {"BME280", "DHT11", "DHT22", "DS18B20"};
 float temperatures[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 bool sensorOnline[4] = {false, false, false, false};
 uint32_t sensorTimes[4] = {0, 0, 0, 0};
 uint32_t sensorSequences[4] = {0, 0, 0, 0};
+bool uiConnectivity[7] = {false, false, false, false, false, false, false};
 
 bool displayReady = false;
 bool loraReady = false;
@@ -23,6 +25,7 @@ unsigned long lastDisplayMs = 0;
 unsigned long lastPacketMs = 0;
 unsigned long lastLoraRetryMs = 0;
 uint32_t lastSequence = 0;
+bool loraStaleLinePrinted = false;
 
 bool packetIsFresh() {
   // If no LoRa packet has arrived recently, the OLED shows stale data as "-".
@@ -45,6 +48,94 @@ int8_t sensorIndexByName(const char *name) {
     }
   }
   return -1;
+}
+
+int8_t uiSensorIndexByName(const char *name) {
+  for (uint8_t i = 0; i < 4; i++) {
+    if (strcmp(UI_SENSOR_NAMES[i], name) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+void updateUiConnectivity(JsonArray connectivity) {
+  // The first six values come from the gateway's learned mesh graph. The
+  // seventh value is true whenever this receiver has just received LoRa data.
+  for (uint8_t i = 0; i < 6 && i < connectivity.size(); i++) {
+    uiConnectivity[i] = (connectivity[i] | 0) == 1;
+  }
+  uiConnectivity[6] = true;
+}
+
+void printUiConnectivityArray() {
+  Serial.print("[");
+  for (uint8_t i = 0; i < 7; i++) {
+    if (i > 0) {
+      Serial.print(",");
+    }
+    Serial.print(uiConnectivity[i] ? 1 : 0);
+  }
+  Serial.print("]");
+}
+
+void printUiTemperatureRecords(JsonArray records, bool includeRecords) {
+  Serial.print("[");
+
+  if (includeRecords) {
+    bool firstRecord = true;
+    for (JsonVariant value : records) {
+      JsonArray row = value.as<JsonArray>();
+      if (row.size() < 3) {
+        continue;
+      }
+
+      if (!firstRecord) {
+        Serial.print(",");
+      }
+      firstRecord = false;
+
+      // LoRa records are [sensorSequence, meshTimeMs, temperatureC].
+      // The UI only needs [meshTimeMs, temperatureC].
+      uint32_t timeMs = row[1].as<uint32_t>();
+      float temperature = row[2].as<float>();
+      Serial.print("[");
+      Serial.print((unsigned long)timeMs);
+      Serial.print(",");
+      Serial.print(temperature, 1);
+      Serial.print("]");
+    }
+  }
+
+  Serial.print("]");
+}
+
+void printUiDataLine(const char *sensorName, JsonArray records, bool hasRecords) {
+  int8_t activeUiSensor = hasRecords ? uiSensorIndexByName(sensorName) : -1;
+
+  Serial.print("data: [");
+  printUiConnectivityArray();
+
+  for (uint8_t i = 0; i < 4; i++) {
+    Serial.print(",");
+    printUiTemperatureRecords(records, activeUiSensor == i);
+  }
+
+  Serial.println("]");
+}
+
+void printUiStaleLineIfNeeded() {
+  if (lastPacketMs == 0 || packetIsFresh() || loraStaleLinePrinted) {
+    return;
+  }
+
+  // Once LoRa has gone quiet, emit one UI line with empty temperature arrays so
+  // the UI can mark the gateway-receiver link as disconnected.
+  uiConnectivity[6] = false;
+  StaticJsonDocument<16> emptyDoc;
+  JsonArray emptyRecords = emptyDoc.to<JsonArray>();
+  printUiDataLine("", emptyRecords, false);
+  loraStaleLinePrinted = true;
 }
 
 void updateDisplay() {
@@ -208,11 +299,14 @@ void handleTemperaturePacket(const String &packet) {
                     temperatures[sensorIndex]);
     }
 
+    updateUiConnectivity(doc["conn"].as<JsonArray>());
     lastSequence = doc["s"] | 0;
     lastPacketMs = millis();
+    loraStaleLinePrinted = false;
 
     Serial.println("LoRa in: " + packet);
     printTemperatureSummary();
+    printUiDataLine(sensorName, records, true);
     updateDisplay();
     sendAck(lastSequence);
     return;
@@ -239,9 +333,14 @@ void handleTemperaturePacket(const String &packet) {
   }
 
   lastPacketMs = millis();
+  loraStaleLinePrinted = false;
 
   Serial.println("LoRa in: " + packet);
   printTemperatureSummary();
+  updateUiConnectivity(doc["conn"].as<JsonArray>());
+  StaticJsonDocument<16> emptyDoc;
+  JsonArray emptyRecords = emptyDoc.to<JsonArray>();
+  printUiDataLine("", emptyRecords, false);
   updateDisplay();
   sendAck(lastSequence);
 }
@@ -281,6 +380,7 @@ void loop() {
   // most one waiting packet, then refresh the OLED at a fixed interval.
   retryLoraIfNeeded();
   receiveLoraPacket();
+  printUiStaleLineIfNeeded();
 
   if (millis() - lastDisplayMs >= DISPLAY_INTERVAL_MS) {
     lastDisplayMs = millis();

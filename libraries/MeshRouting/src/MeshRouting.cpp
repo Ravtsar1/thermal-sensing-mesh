@@ -47,6 +47,31 @@ void MeshRouting::setGatewaySender(GatewayBatchSender sender) {
   gatewaySender = sender;
 }
 
+void MeshRouting::getProjectConnectivity(bool connectivity[6]) {
+  if (connectivity == nullptr) {
+    return;
+  }
+
+  for (uint8_t i = 0; i < 6; i++) {
+    connectivity[i] = false;
+  }
+
+  const char *pairs[6][2] = {
+      {"BME280", "DHT11"},
+      {"BME280", "DHT22"},
+      {"BME280", "DS18B20"},
+      {"DHT11", "DHT22"},
+      {"DHT11", "DS18B20"},
+      {"DHT22", "DS18B20"},
+  };
+
+  for (uint8_t i = 0; i < 6; i++) {
+    uint32_t first = findFreshNodeIdByName(pairs[i][0]);
+    uint32_t second = findFreshNodeIdByName(pairs[i][1]);
+    connectivity[i] = first != 0 && second != 0 && graphHasFreshEdge(first, second);
+  }
+}
+
 void MeshRouting::markLinksDirty() {
   // Called by the painlessMesh changed-connection callback. The actual LINKS
   // packet is sent from update() so it does not run inside the callback stack.
@@ -343,6 +368,46 @@ void MeshRouting::addGraphEdge(uint32_t first, uint32_t second) {
   addNeighbor(graph[secondIndex], first);
   graph[firstIndex].lastSeenMs = millis();
   graph[secondIndex].lastSeenMs = millis();
+}
+
+uint32_t MeshRouting::findFreshNodeIdByName(const char *name) {
+  if (name == nullptr || name[0] == '\0') {
+    return 0;
+  }
+
+  for (uint8_t i = 0; i < MAX_GRAPH_NODES; i++) {
+    if (graph[i].used && graphNodeFresh(graph[i]) && strcmp(graph[i].name, name) == 0) {
+      return graph[i].id;
+    }
+  }
+
+  return 0;
+}
+
+bool MeshRouting::graphHasFreshEdge(uint32_t first, uint32_t second) {
+  int firstIndex = findGraphIndex(first);
+  int secondIndex = findGraphIndex(second);
+
+  if (firstIndex < 0 || secondIndex < 0) {
+    return false;
+  }
+
+  if (!graphNodeFresh(graph[firstIndex]) || !graphNodeFresh(graph[secondIndex])) {
+    return false;
+  }
+
+  return graphListsNeighbor(graph[firstIndex], second) ||
+         graphListsNeighbor(graph[secondIndex], first);
+}
+
+bool MeshRouting::graphListsNeighbor(const GraphNode &node, uint32_t neighborId) {
+  for (uint8_t i = 0; i < node.neighborCount; i++) {
+    if (node.neighbors[i] == neighborId) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void MeshRouting::learnLayoutJson(const char *layout) {

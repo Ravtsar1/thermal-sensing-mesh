@@ -37,6 +37,13 @@ public:
   // Only the gateway sketch sets this; it forwards DATA_BATCH packets to LoRa.
   void setGatewaySender(GatewayBatchSender sender);
 
+  // Fill the six mesh-link booleans used by the UI branch:
+  // [BME280-DHT11, BME280-DHT22, BME280-DS18B20,
+  //  DHT11-DHT22, DHT11-DS18B20, DHT22-DS18B20].
+  // The LoRa receiver link is not part of the WiFi mesh, so the gateway sketch
+  // adds that seventh value when it builds the LoRa packet.
+  void getProjectConnectivity(bool connectivity[6]);
+
 private:
   // These limits are deliberately small because the project has five ESP32s.
   // Increasing them is safe, but each increase uses more RAM on every node.
@@ -104,6 +111,9 @@ private:
   bool graphNodeFresh(const GraphNode &node);
   void addNeighbor(GraphNode &node, uint32_t neighborId);
   void addGraphEdge(uint32_t first, uint32_t second);
+  uint32_t findFreshNodeIdByName(const char *name);
+  bool graphHasFreshEdge(uint32_t first, uint32_t second);
+  bool graphListsNeighbor(const GraphNode &node, uint32_t neighborId);
   void learnLayoutJson(const char *layout);
   void learnLayoutNode(JsonObject node);
   uint32_t findGatewayId();
