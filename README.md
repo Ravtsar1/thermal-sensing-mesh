@@ -190,22 +190,9 @@ Thermal Sensing Mesh/
 
 ## GitHub Compile Check
 
-This repo includes `.github/workflows/arduino-compile.yml`. On GitHub, it uses
-Arduino CLI through the `arduino/compile-sketches` action to compile the main
-sketches for an ESP32 board.
-
-This does not upload to hardware and does not change firmware behavior. It only
-checks whether the code still compiles when pushed to GitHub.
-
-The workflow runs automatically only when firmware folders, shared mesh code, or
-the workflow file changes. It also has a manual run button in GitHub Actions.
-Documentation-only changes do not start the compile job.
-
-The first GitHub run after a cache reset may still take longer because it must
-download the ESP32 board package and Arduino libraries. Later runs should be
-faster because the workflow caches Arduino board packages, installed libraries,
-and Arduino build cache files. Older in-progress compile runs on the same branch
-are cancelled when a newer commit is pushed.
+This repo includes a GitHub Actions compile check for the main ESP32 sketches.
+It only checks whether the firmware builds; it does not upload to hardware or
+change firmware behavior.
 
 ## Current Limitations
 
