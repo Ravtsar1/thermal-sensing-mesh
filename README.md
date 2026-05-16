@@ -17,7 +17,8 @@ The current firmware uses five ESP32 roles:
 
 ## How The Mesh Works
 
-Each mesh ESP32 runs `MeshDebug` and `MeshRouting`.
+Each mesh ESP32 uses two shared code modules from this repository: `MeshDebug`
+and `MeshRouting`.
 
 `MeshDebug` is a small wrapper around painlessMesh. It starts the mesh, keeps
 callbacks consistent, reads synchronized mesh time, sends JSON packets, and
@@ -76,12 +77,36 @@ Install these from Arduino IDE Library Manager:
 - `Adafruit GFX Library`
 - `Adafruit SSD1306`
 
+This project also includes two shared local code folders:
+
+- `MeshDebug`, located at `libraries/MeshDebug`
+- `MeshRouting`, located at `libraries/MeshRouting`
+
+`MeshDebug` contains the painlessMesh wrapper. `MeshRouting` contains the
+connectivity, history, batch, and ACK protocol.
+
 ## Arduino IDE Setup
 
 Each main sketch folder contains a committed `Config.h` and a matching
 `Config.example.h`.
 
-For Arduino IDE:
+The mesh sketches currently refer to `MeshDebug` and `MeshRouting` by relative
+path. Keep the repository folder structure unchanged and open the sketches from
+inside this project folder:
+
+```cpp
+#include "../libraries/MeshDebug/src/MeshDebug.h"
+#include "../libraries/MeshRouting/src/MeshRouting.h"
+```
+
+The matching `.cpp` files are also included by relative path in the mesh
+sketches. This keeps Arduino IDE usable without separately installing
+`MeshDebug` and `MeshRouting` as libraries.
+
+Short note: this relative-path setup may change in the future if `MeshDebug`
+and `MeshRouting` are packaged as proper Arduino libraries.
+
+Compile/upload normally:
 
 1. Open one sketch folder, for example
    `ESP_Mesh_DHT11DataSim/ESP_Mesh_DHT11DataSim.ino`.
@@ -159,6 +184,8 @@ Thermal Sensing Mesh/
   ESP_Mesh_BME280DataSim/     Simulated BME280 mesh node
   ESP_Mesh_DS18B20_Lora/      DS18B20 mesh gateway and LoRa transmitter
   ESP_LoraReceiver/           LoRa receiver and OLED display
+  libraries/MeshDebug/        Shared mesh debug/transport code
+  libraries/MeshRouting/      Shared mesh routing/history code
 ```
 
 ## GitHub Compile Check
@@ -175,8 +202,8 @@ checks whether the code still compiles when pushed to GitHub.
 - DHT11, DHT22, and BME280 are simulated in the main mesh sketches.
 - DS18B20 is the only real temperature sensor in the current gateway sketch.
 - History is stored in RAM, so it is lost if a node resets.
-- `MeshDebug` and `MeshRouting` are duplicated in each mesh sketch folder so the
-  Arduino IDE can open each sketch easily. Keep those copies synchronized.
+- The mesh sketches depend on the repository folder structure because
+  `MeshDebug` and `MeshRouting` are included by relative path.
 
 ## License
 

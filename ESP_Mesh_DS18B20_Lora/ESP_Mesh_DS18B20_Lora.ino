@@ -1,6 +1,6 @@
 #include "Config.h"
-#include "MeshDebug.h"
-#include "MeshRouting.h"
+#include "../libraries/MeshDebug/src/MeshDebug.h"
+#include "../libraries/MeshRouting/src/MeshRouting.h"
 #include <ArduinoJson.h>
 #include <DallasTemperature.h>
 #include <LoRa.h>
@@ -8,6 +8,9 @@
 #include <SPI.h>
 #include <math.h>
 #include <string.h>
+
+#include "../libraries/MeshDebug/src/MeshDebug.cpp"
+#include "../libraries/MeshRouting/src/MeshRouting.cpp"
 
 struct DeliveredSensor {
   // Tracks whether the gateway has recently heard from each mesh sensor. This

@@ -1,8 +1,11 @@
 #include "Config.h"
-#include "MeshDebug.h"
-#include "MeshRouting.h"
+#include "../libraries/MeshDebug/src/MeshDebug.h"
+#include "../libraries/MeshRouting/src/MeshRouting.h"
 #include <esp_system.h>
 #include <math.h>
+
+#include "../libraries/MeshDebug/src/MeshDebug.cpp"
+#include "../libraries/MeshRouting/src/MeshRouting.cpp"
 
 // MeshDebug is the transport wrapper. MeshRouting is the store-and-forward
 // layer that buffers readings and uploads them when a gateway exists.

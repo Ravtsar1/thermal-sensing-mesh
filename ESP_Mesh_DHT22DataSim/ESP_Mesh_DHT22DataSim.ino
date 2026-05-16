@@ -1,8 +1,11 @@
 #include "Config.h"
-#include "MeshDebug.h"
-#include "MeshRouting.h"
+#include "../libraries/MeshDebug/src/MeshDebug.h"
+#include "../libraries/MeshRouting/src/MeshRouting.h"
 #include <esp_system.h>
 #include <math.h>
+
+#include "../libraries/MeshDebug/src/MeshDebug.cpp"
+#include "../libraries/MeshRouting/src/MeshRouting.cpp"
 
 // MeshDebug handles the WiFi mesh transport. MeshRouting handles the project
 // protocol: local history, gateway discovery, batching, and ACK deletion.

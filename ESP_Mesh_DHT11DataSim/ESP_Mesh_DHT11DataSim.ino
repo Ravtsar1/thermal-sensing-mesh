@@ -1,8 +1,11 @@
 #include "Config.h"
-#include "MeshDebug.h"
-#include "MeshRouting.h"
+#include "../libraries/MeshDebug/src/MeshDebug.h"
+#include "../libraries/MeshRouting/src/MeshRouting.h"
 #include <esp_system.h>
 #include <math.h>
+
+#include "../libraries/MeshDebug/src/MeshDebug.cpp"
+#include "../libraries/MeshRouting/src/MeshRouting.cpp"
 
 // One MeshDebug instance owns the painlessMesh connection.
 // One MeshRouting instance owns history storage, gateway discovery, and ACKs.

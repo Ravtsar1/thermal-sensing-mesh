@@ -39,3 +39,11 @@ Thumbs.db
 
 # Optional local overrides. The committed Config.h files contain public defaults.
 Config.local.h
+
+# Keep only this project's shared local code in libraries/. External Arduino
+# dependencies should be installed through Arduino IDE or GitHub Actions.
+libraries/*
+!libraries/MeshDebug/
+!libraries/MeshDebug/**
+!libraries/MeshRouting/
+!libraries/MeshRouting/**

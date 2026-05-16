@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MeshDebug.h"
+#include "../../MeshDebug/src/MeshDebug.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
