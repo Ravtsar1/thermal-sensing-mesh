@@ -197,6 +197,16 @@ sketches for an ESP32 board.
 This does not upload to hardware and does not change firmware behavior. It only
 checks whether the code still compiles when pushed to GitHub.
 
+The workflow runs automatically only when firmware folders, shared mesh code, or
+the workflow file changes. It also has a manual run button in GitHub Actions.
+Documentation-only changes do not start the compile job.
+
+The first GitHub run after a cache reset may still take longer because it must
+download the ESP32 board package and Arduino libraries. Later runs should be
+faster because the workflow caches Arduino board packages, installed libraries,
+and Arduino build cache files. Older in-progress compile runs on the same branch
+are cancelled when a newer commit is pushed.
+
 ## Current Limitations
 
 - DHT11, DHT22, and BME280 are simulated in the main mesh sketches.
