@@ -1,4 +1,4 @@
-# Thermal Sensing Mesh
+# Thermal Sensing Mesh (⚠️ This branch is under active development and may be unstable.)
 
 Thermal Sensing Mesh is an ESP32 temperature sensing network that combines a
 WiFi mesh with a LoRa uplink. The mesh sensors keep timestamped temperature
@@ -7,13 +7,13 @@ history batches only after a route exists.
 
 The current firmware uses five ESP32 roles:
 
-| Folder | Role | Sensor behavior |
-| --- | --- | --- |
-| `ESP_Mesh_DHT11DataSim` | Mesh sensor node | Simulated DHT11 temperature |
-| `ESP_Mesh_DHT22DataSim` | Mesh sensor node | Simulated DHT22 temperature |
-| `ESP_Mesh_BME280DataSim` | Mesh sensor node | Simulated BME280 temperature |
-| `ESP_Mesh_DS18B20_Lora` | Mesh gateway + LoRa transmitter | Real DS18B20 temperature |
-| `ESP_LoraReceiver` | LoRa receiver + OLED display | Receives gateway packets |
+| Folder                   | Role                            | Sensor behavior              |
+| ------------------------ | ------------------------------- | ---------------------------- |
+| `ESP_Mesh_DHT11DataSim`  | Mesh sensor node                | Simulated DHT11 temperature  |
+| `ESP_Mesh_DHT22DataSim`  | Mesh sensor node                | Simulated DHT22 temperature  |
+| `ESP_Mesh_BME280DataSim` | Mesh sensor node                | Simulated BME280 temperature |
+| `ESP_Mesh_DS18B20_Lora`  | Mesh gateway + LoRa transmitter | Real DS18B20 temperature     |
+| `ESP_LoraReceiver`       | LoRa receiver + OLED display    | Receives gateway packets     |
 
 ## How The Mesh Works
 
