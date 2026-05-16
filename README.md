@@ -107,8 +107,37 @@ Upload one firmware role to each ESP32:
 4. `ESP_Mesh_DHT22DataSim` to the DHT22 simulated node ESP32.
 5. `ESP_Mesh_BME280DataSim` to the BME280 simulated node ESP32.
 
-Open Serial Monitor at `115200` baud. Type `1` to enable verbose mesh debug on
-mesh nodes, or `0` to disable it.
+Open Serial Monitor at `115200` baud. Mesh sketches also support the debug
+toggle described below.
+
+## Serial Debug Toggle
+
+The four mesh sketches read simple commands from Serial Monitor:
+
+- Send `1` to enable verbose `MeshDebug` output.
+- Send `0` to disable verbose `MeshDebug` output.
+
+This feature is available in:
+
+- `ESP_Mesh_DHT11DataSim`
+- `ESP_Mesh_DHT22DataSim`
+- `ESP_Mesh_BME280DataSim`
+- `ESP_Mesh_DS18B20_Lora`
+
+The LoRa receiver sketch does not implement this toggle.
+
+When enabled, `MeshDebug` prints extra transport-level mesh information such as
+mesh startup, JSON broadcasts, single-node sends, incoming mesh messages, new
+mesh nodes, connection changes, and mesh time adjustments.
+
+When disabled, those `MeshDebug` messages are hidden. It does not stop the
+program, disable the mesh, change routing behavior, or turn off every Serial
+message. Sensor readings, routing/history logs, gateway logs, LoRa logs, and
+receiver logs may still print because they are produced outside `MeshDebug`.
+
+The simulated DHT11, DHT22, and BME280 mesh nodes start with verbose
+`MeshDebug` output enabled. The DS18B20 gateway starts with it disabled to keep
+the gateway Serial output quieter.
 
 ## Radio Frequency Note
 
