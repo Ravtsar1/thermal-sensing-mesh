@@ -1,0 +1,41 @@
+# Arduino / ESP32 build outputs
+build/
+build-*/
+*.bin
+*.elf
+*.hex
+*.map
+*.eep
+*.lst
+*.sym
+*.o
+*.a
+*.d
+*.ii
+*.s
+*.bootloader.bin
+*.partitions.bin
+*.merged.bin
+*.uf2
+
+# Arduino IDE / CLI local files
+*.ino.cpp
+arduino-cli.yaml
+.arduinoIDE/
+
+# PlatformIO local files, if someone chooses to use it later
+.pio/
+.piolibdeps/
+.libdeps/
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Optional local overrides. The committed Config.h files contain public defaults.
+Config.local.h

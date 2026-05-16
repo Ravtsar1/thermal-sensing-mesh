@@ -1,0 +1,35 @@
+name: Arduino Compile
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compile sketches
+        uses: arduino/compile-sketches@v1
+        with:
+          fqbn: esp32:esp32:esp32
+          platforms: |
+            - name: esp32:esp32
+              source-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          libraries: |
+            - name: painlessMesh
+            - name: ArduinoJson
+            - name: LoRa
+            - name: OneWire
+            - name: DallasTemperature
+            - name: Adafruit GFX Library
+            - name: Adafruit SSD1306
+          sketch-paths: |
+            - ESP_Mesh_DHT11DataSim
+            - ESP_Mesh_DHT22DataSim
+            - ESP_Mesh_BME280DataSim
+            - ESP_Mesh_DS18B20_Lora
+            - ESP_LoraReceiver
