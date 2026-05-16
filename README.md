@@ -67,6 +67,8 @@ when the gateway becomes reachable again.
 Install these from Arduino IDE Library Manager:
 
 - `painlessMesh`
+- `AsyncTCP`
+- `TaskScheduler`
 - `ArduinoJson`
 - `LoRa`
 - `OneWire`

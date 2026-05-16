@@ -16,11 +16,17 @@ jobs:
         uses: arduino/compile-sketches@v1
         with:
           fqbn: esp32:esp32:esp32
+          verbose: true
           platforms: |
             - name: esp32:esp32
               source-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
           libraries: |
-            - name: painlessMesh
+            - source-url: https://gitlab.com/painlessMesh/painlessMesh.git
+              version: v1.5.7
+              destination-name: painlessMesh
+            - source-url: https://github.com/ESP32Async/AsyncTCP.git
+              destination-name: AsyncTCP
+            - name: TaskScheduler
             - name: ArduinoJson
             - name: LoRa
             - name: OneWire
