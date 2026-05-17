@@ -8,8 +8,8 @@ typedef void (*MeshRawMessageCallback)(uint32_t from, const String &msg);
 typedef void (*MeshChangedCallback)();
 
 // Thin wrapper around painlessMesh.
-// The project code uses this class so every sketch can send JSON, read mesh
-// time, and react to connection changes with the same small API.
+// The project code uses this class so every sketch can send JSON and react to
+// connection changes with the same small API.
 class MeshDebug {
 public:
   MeshDebug();

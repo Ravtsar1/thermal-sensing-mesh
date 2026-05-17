@@ -13,6 +13,7 @@ MeshDebug meshDebug;
 MeshRouting meshRouting;
 
 unsigned long lastSendMs = 0;
+unsigned long lastTimeWaitLogMs = 0;
 float simulatedTemperature = 25.8;
 
 // DHT11 is still simulated. The random walk prevents every packet from having
@@ -31,6 +32,19 @@ void publishTemperature() {
   meshRouting.addLocalReading(simulatedTemperature);
 
   Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
+}
+
+bool gatewayTimeReadyForTemperature() {
+  if (meshRouting.isTimeReadyForReadings()) {
+    return true;
+  }
+
+  if (millis() - lastTimeWaitLogMs >= SEND_INTERVAL_MS) {
+    lastTimeWaitLogMs = millis();
+    Serial.println("Temperature waiting: gateway time is not synchronized yet");
+  }
+
+  return false;
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {
@@ -87,8 +101,10 @@ void loop() {
   if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
     lastSendMs = millis();
 
-    // This creates one new simulated reading every interval. It may not be
-    // transmitted immediately; MeshRouting decides when upload is possible.
-    publishTemperature();
+    if (gatewayTimeReadyForTemperature()) {
+      // This creates one new simulated reading every interval. It may not be
+      // transmitted immediately; MeshRouting decides when upload is possible.
+      publishTemperature();
+    }
   }
 }

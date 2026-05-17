@@ -29,3 +29,4 @@ static const byte LORA_SYNC_WORD = 0xF3;
 static const unsigned long DISPLAY_INTERVAL_MS = 500UL;
 static const unsigned long PACKET_TIMEOUT_MS = 10000UL;
 static const unsigned long LORA_RETRY_INTERVAL_MS = 5000UL;
+static const unsigned long UI_DISCONNECTED_PRINT_INTERVAL_MS = 1000UL;

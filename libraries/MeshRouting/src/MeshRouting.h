@@ -31,7 +31,11 @@ public:
   // Called when painlessMesh says the connection layout changed.
   void markLinksDirty();
 
-  // Save a new local sensor reading with synchronized mesh time.
+  // Non-gateway sensors must hear a gateway time beacon before recording
+  // temperature. The gateway is always ready because it is the authority.
+  bool isTimeReadyForReadings();
+
+  // Save a new local sensor reading with gateway-authority time.
   void addLocalReading(float temperature);
 
   // Only the gateway sketch sets this; it forwards DATA_BATCH packets to LoRa.
@@ -99,11 +103,14 @@ private:
   unsigned long lastGatewaySeenMs;
   unsigned long lastGatewayWaitLogMs;
   uint32_t gatewayNodeId;
+  int64_t gatewayTimeOffsetMs;
+  bool gatewayTimeReady;
   bool linksDirty;
 
   // Connectivity/gateway discovery.
   void publishLinks();
   void publishGatewayBeacon();
+  uint32_t authorityTimeMs();
   void updateSelfLinks();
   void updateGraphNode(uint32_t nodeId, const char *name, bool gateway, JsonArray neighbors);
   int findGraphIndex(uint32_t nodeId);

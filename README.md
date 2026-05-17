@@ -1,4 +1,6 @@
-# Thermal Sensing Mesh (⚠️ This branch is under active development and may be unstable.)
+# Thermal Sensing Mesh
+
+Note: this `ui-feature` branch is under active development and may be unstable.
 
 Thermal Sensing Mesh is an ESP32 temperature sensing network that combines a
 WiFi mesh with a LoRa uplink. The mesh sensors keep timestamped temperature
@@ -26,8 +28,7 @@ Each mesh ESP32 uses two shared code modules from this repository: `MeshDebug`
 and `MeshRouting`.
 
 `MeshDebug` is a small wrapper around painlessMesh. It starts the mesh, keeps
-callbacks consistent, reads synchronized mesh time, sends JSON packets, and
-lists direct and known mesh nodes.
+callbacks consistent, sends JSON packets, and lists direct and known mesh nodes.
 
 `MeshRouting` is the project protocol layer:
 
@@ -40,8 +41,8 @@ lists direct and known mesh nodes.
    painlessMesh layout data inside those packets.
 5. When a sensor can reach the gateway, it creates a `DATA_BATCH` packet with
    several history records.
-6. The packet includes original sensor ID, sensor name, batch ID, mesh-time
-   timestamps, temperature values, and a logical path.
+6. The packet includes original sensor ID, sensor name, batch ID,
+   gateway-authority timestamps, temperature values, and a logical path.
 7. painlessMesh handles the real multi-hop forwarding to the gateway.
 8. The gateway converts the mesh `DATA_BATCH` into a shorter LoRa `BATCH`.
 9. The LoRa `BATCH` includes the delivered temperature history and a seven-value
@@ -56,6 +57,32 @@ lists direct and known mesh nodes.
 This keeps the mesh from flooding every temperature sample immediately. If a
 sensor is disconnected, it keeps storing readings and uploads the saved history
 when the gateway becomes reachable again.
+
+## Time Synchronization
+
+The DS18B20 gateway is the authority for project time. It broadcasts a small
+`GW` packet every 5 seconds with its current gateway time.
+
+DHT11, DHT22, and BME280 do not take temperature readings until they receive a
+`GW` packet. After receiving one, each node calculates this local offset:
+
+```text
+gatewayTimeOffset = gatewayTimeFromBeacon - localMillis
+```
+
+Then each sensor timestamps readings with:
+
+```text
+gatewayTime = localMillis + gatewayTimeOffset
+```
+
+If a sensor later disconnects after it has already synchronized once, it keeps
+recording with the last known gateway-time offset. When the gateway becomes
+reachable again, the next `GW` packet refreshes the offset.
+
+If a non-gateway sensor boots alone and never hears the gateway, it keeps
+waiting and does not create temperature history yet. This keeps all recorded
+temperature timestamps tied to the gateway's time base.
 
 ## UI Serial Output
 
@@ -93,7 +120,7 @@ The first array contains seven boolean values represented as `1` or `0`:
 Each temperature history array contains rows in this format:
 
 ```text
-[meshTimeMs, temperatureC]
+[gatewayTimeMs, temperatureC]
 ```
 
 For example:
@@ -118,6 +145,46 @@ data: [[0,0,0,0,0,0,0],[],[],[],[]]
 Other Serial prints such as `LoRa in`, `LoRa ACK out`, and packet summaries are
 kept for debugging. UI code should ignore those lines and only parse lines that
 begin with `data:`.
+
+## Timing Intervals
+
+### Temperature And Time
+
+| Behavior | Default interval |
+| --- | --- |
+| DHT11 simulated temperature reading | `2500 ms` |
+| DHT22 simulated temperature reading | `2500 ms` |
+| BME280 simulated temperature reading | `2500 ms` |
+| DS18B20 real temperature reading | `2500 ms` |
+| Gateway time beacon used for sensor synchronization | `5000 ms` |
+
+### Mesh Routing
+
+| Behavior | Default interval |
+| --- | --- |
+| `LINKS` connectivity report | `30000 ms` |
+| Initial `LINKS` startup jitter | `0-4000 ms` |
+| Learned link freshness timeout | `90000 ms` |
+| DS18B20 gateway `GW` beacon | `5000 ms` |
+| Learned gateway freshness timeout | `45000 ms` |
+| Mesh history send retry | `5000 ms` |
+| Mesh `BATCH_ACK` timeout | `12000 ms` |
+
+Connectivity reports are also triggered after painlessMesh reports a topology
+change, so a node may publish `LINKS` earlier than the normal 30 second period.
+
+### Gateway And LoRa Receiver
+
+| Behavior | Default interval |
+| --- | --- |
+| Remote mesh sensor LED freshness on gateway | `30000 ms` |
+| LoRa receiver ACK freshness on gateway | `10000 ms` |
+| Gateway wait time for LoRa ACK after sending | `450 ms` |
+| Gateway LoRa module retry after init failure | `5000 ms` |
+| Receiver OLED refresh | `500 ms` |
+| Receiver packet freshness timeout | `10000 ms` |
+| Receiver LoRa module retry after init failure | `5000 ms` |
+| Receiver disconnected UI `data:` line | `1000 ms` |
 
 ## Requirements
 
@@ -224,7 +291,7 @@ The LoRa receiver sketch does not implement this toggle.
 
 When enabled, `MeshDebug` prints extra transport-level mesh information such as
 mesh startup, JSON broadcasts, single-node sends, incoming mesh messages, new
-mesh nodes, connection changes, and mesh time adjustments.
+mesh nodes, connection changes, and painlessMesh internal time adjustments.
 
 When disabled, those `MeshDebug` messages are hidden. It does not stop the
 program, disable the mesh, change routing behavior, or turn off every Serial

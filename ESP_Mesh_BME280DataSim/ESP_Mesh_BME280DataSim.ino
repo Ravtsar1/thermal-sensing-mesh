@@ -13,6 +13,7 @@ MeshDebug meshDebug;
 MeshRouting meshRouting;
 
 unsigned long lastSendMs = 0;
+unsigned long lastTimeWaitLogMs = 0;
 float simulatedTemperature = 25.4;
 
 // BME280 is still simulated for now. This small random walk gives a realistic
@@ -31,6 +32,19 @@ void publishTemperature() {
   meshRouting.addLocalReading(simulatedTemperature);
 
   Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
+}
+
+bool gatewayTimeReadyForTemperature() {
+  if (meshRouting.isTimeReadyForReadings()) {
+    return true;
+  }
+
+  if (millis() - lastTimeWaitLogMs >= SEND_INTERVAL_MS) {
+    lastTimeWaitLogMs = millis();
+    Serial.println("Temperature waiting: gateway time is not synchronized yet");
+  }
+
+  return false;
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {
@@ -87,8 +101,10 @@ void loop() {
   if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
     lastSendMs = millis();
 
-    // Store a simulated BME280 reading. This does not flood the mesh; it waits
-    // in history until MeshRouting sends a batch.
-    publishTemperature();
+    if (gatewayTimeReadyForTemperature()) {
+      // Store a simulated BME280 reading. This does not flood the mesh; it
+      // waits in history until MeshRouting sends a batch.
+      publishTemperature();
+    }
   }
 }

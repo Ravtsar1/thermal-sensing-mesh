@@ -13,6 +13,7 @@ MeshDebug meshDebug;
 MeshRouting meshRouting;
 
 unsigned long lastSendMs = 0;
+unsigned long lastTimeWaitLogMs = 0;
 float simulatedTemperature = 25.1;
 
 // DHT22 is simulated with a gentle random walk. Replace this function with a
@@ -31,6 +32,19 @@ void publishTemperature() {
   meshRouting.addLocalReading(simulatedTemperature);
 
   Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
+}
+
+bool gatewayTimeReadyForTemperature() {
+  if (meshRouting.isTimeReadyForReadings()) {
+    return true;
+  }
+
+  if (millis() - lastTimeWaitLogMs >= SEND_INTERVAL_MS) {
+    lastTimeWaitLogMs = millis();
+    Serial.println("Temperature waiting: gateway time is not synchronized yet");
+  }
+
+  return false;
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {
@@ -86,8 +100,10 @@ void loop() {
   if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
     lastSendMs = millis();
 
-    // Add one reading to RAM history. It will be uploaded later if the gateway
-    // is reachable through painlessMesh.
-    publishTemperature();
+    if (gatewayTimeReadyForTemperature()) {
+      // Add one reading to RAM history. It will be uploaded later if the
+      // gateway is reachable through painlessMesh.
+      publishTemperature();
+    }
   }
 }

@@ -34,6 +34,7 @@ bool loraReady = false;
 unsigned long lastSensorReadMs = 0;
 unsigned long lastLoraAckMs = 0;
 unsigned long lastLoraRetryMs = 0;
+unsigned long lastTimeWaitLogMs = 0;
 uint32_t loraSequence = 0;
 
 float roundOne(float value) {
@@ -193,7 +194,7 @@ bool sendBatchOverLora(const String &meshPacket) {
   loraDoc["batch"] = sourceDoc["batch"].as<uint32_t>();
   loraDoc["fromSeq"] = sourceDoc["fromSeq"].as<uint32_t>();
   loraDoc["toSeq"] = sourceDoc["toSeq"].as<uint32_t>();
-  loraDoc["sentAt"] = meshDebug.getMeshTime() / 1000UL;
+  loraDoc["sentAt"] = millis();
 
   // UI connectivity order:
   // [BME280-DHT11, BME280-DHT22, BME280-DS18B20,
@@ -245,6 +246,19 @@ void readDs18b20() {
   // That way DS18B20 data is also retried if the LoRa station is unreachable.
   meshRouting.addLocalReading(temperature);
   Serial.printf("DS18B20 local temperature saved: %.1f C\n", temperature);
+}
+
+bool gatewayTimeReadyForTemperature() {
+  if (meshRouting.isTimeReadyForReadings()) {
+    return true;
+  }
+
+  if (millis() - lastTimeWaitLogMs >= SENSOR_INTERVAL_MS) {
+    lastTimeWaitLogMs = millis();
+    Serial.println("DS18B20 waiting: gateway time is not synchronized yet");
+  }
+
+  return false;
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {
@@ -326,9 +340,11 @@ void loop() {
   if (millis() - lastSensorReadMs >= SENSOR_INTERVAL_MS) {
     lastSensorReadMs = millis();
 
-    // Save the gateway's own DS18B20 reading into the same reliable history
-    // pipeline used by the remote nodes.
-    readDs18b20();
+    if (gatewayTimeReadyForTemperature()) {
+      // Save the gateway's own DS18B20 reading into the same reliable history
+      // pipeline used by the remote nodes.
+      readDs18b20();
+    }
   }
 
   updateLeds();

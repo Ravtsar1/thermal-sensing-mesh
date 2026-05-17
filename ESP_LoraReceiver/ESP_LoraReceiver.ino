@@ -13,7 +13,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 // OLED, but every LoRa BATCH may contain several historical records.
 const char *SENSOR_NAMES[] = {"DS18B20", "DHT11", "DHT22", "BME280"};
 const char *UI_SENSOR_NAMES[] = {"BME280", "DHT11", "DHT22", "DS18B20"};
-static const unsigned long UI_DISCONNECTED_PRINT_INTERVAL_MS = 1000UL;
 float temperatures[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 bool sensorOnline[4] = {false, false, false, false};
 uint32_t sensorTimes[4] = {0, 0, 0, 0};
@@ -102,8 +101,8 @@ void printUiTemperatureRecords(JsonArray records, bool includeRecords) {
       }
       firstRecord = false;
 
-      // LoRa records are [sensorSequence, meshTimeMs, temperatureC].
-      // The UI only needs [meshTimeMs, temperatureC].
+      // LoRa records are [sensorSequence, gatewayTimeMs, temperatureC].
+      // The UI only needs [gatewayTimeMs, temperatureC].
       uint32_t timeMs = row[1].as<uint32_t>();
       float temperature = row[2].as<float>();
       Serial.print("[");
@@ -184,7 +183,7 @@ void updateDisplay() {
 
 void printTemperatureSummary() {
   // Serial output is intentionally more detailed than the OLED: it shows the
-  // sensor sequence and mesh timestamp of the latest received record.
+  // sensor sequence and gateway-authority timestamp of the latest record.
   Serial.printf("Packet %lu received\n", (unsigned long)lastSequence);
 
   for (uint8_t i = 0; i < 4; i++) {
@@ -280,7 +279,7 @@ void handleTemperaturePacket(const String &packet) {
   const char *type = doc["t"] | "";
   if (strcmp(type, "BATCH") == 0) {
     // New format: one sensor history batch with timestamped records:
-    // records = [[sensorSeq, meshTimeMs, temperatureC], ...]
+    // records = [[sensorSeq, gatewayTimeMs, temperatureC], ...]
     const char *sensorName = doc["name"] | "";
     int8_t sensorIndex = sensorIndexByName(sensorName);
     if (sensorIndex < 0) {
