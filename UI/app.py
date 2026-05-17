@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 import json
-import os
+import time
 from pathlib import Path
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -104,6 +104,15 @@ def clear_live_data():
 with st.sidebar:
     st.header("Control Panel")
     st.write("Manage your dashboard display settings here.")
+
+    st.divider()
+
+    st.subheader("Chart Style")
+    temperature_plot_style = st.radio(
+        "Temperature History",
+        ["Lines", "Dots"],
+        horizontal=True
+    )
     
     st.divider()
     
@@ -144,7 +153,9 @@ for sensor_name, filename in SENSOR_FILES.items():
 
         df = df.dropna(subset=["time", "temp"]).copy()
         df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
-        df = df.dropna(subset=["temp"])
+        df["time_dt"] = pd.to_datetime(df["time"].astype(str), format="%H:%M:%S", errors="coerce")
+        df = df.dropna(subset=["temp", "time_dt"])
+        df = df.sort_values("time_dt")
 
         if df.empty:
             sensor_data[sensor_name] = None
@@ -186,7 +197,7 @@ for sensor_name, df in sensor_data.items():
     if df is None:
         continue
     
-    temp_series = df.set_index("time")["temp"]
+    temp_series = df.groupby("time_dt")["temp"].last()
     temp_series.name = sensor_name.upper()
     
     if chart_df.empty:
@@ -195,8 +206,40 @@ for sensor_name, df in sensor_data.items():
         chart_df = chart_df.join(temp_series, how="outer")
 
 if not chart_df.empty:
-    chart_df = chart_df.ffill()
-    st.line_chart(chart_df)
+    temperature_fig = go.Figure()
+
+    if temperature_plot_style == "Lines":
+        plotted_df = chart_df.ffill()
+        for sensor_name in plotted_df.columns:
+            temperature_fig.add_trace(go.Scatter(
+                x=plotted_df.index,
+                y=plotted_df[sensor_name],
+                mode="lines",
+                name=sensor_name
+            ))
+    else:
+        for sensor_name, df in sensor_data.items():
+            if df is None:
+                continue
+
+            temperature_fig.add_trace(go.Scatter(
+                x=df["time_dt"],
+                y=df["temp"],
+                mode="markers",
+                name=sensor_name.upper(),
+                marker=dict(size=7)
+            ))
+
+    temperature_fig.update_layout(
+        xaxis_title="Time",
+        yaxis_title="Temperature (C)",
+        xaxis=dict(type="date", tickformat="%H:%M:%S"),
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    st.plotly_chart(temperature_fig, width="stretch")
 else:
     st.info("No live data available. Waiting for incoming telemetry...")
 
@@ -359,3 +402,10 @@ with col2:
                 st.error(e)
         else:
             st.write("Connectivity data file is missing.")
+
+# If streamlit-autorefresh is not installed in the active Python environment,
+# fall back to Streamlit's built-in rerun mechanism so live CSV updates still
+# appear without manually refreshing the browser.
+if st_autorefresh is None:
+    time.sleep(1)
+    st.rerun()
