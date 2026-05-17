@@ -1,5 +1,3 @@
-Here is the updated `README.md`. I have completely overhauled the execution instructions by adding a dedicated **How to Use** section that reflects your new unified `main.py` system manager architecture (including both Simulation and Real Hardware modes), and cleaned up the old manual run references.
-
 ```markdown
 # Thermal Mesh UI
 
