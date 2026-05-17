@@ -1,10 +1,15 @@
-import os
 import json
 import time
-import serial
 import subprocess
+import sys
 from datetime import datetime, timedelta
 import argparse
+from pathlib import Path
+
+try:
+    import serial
+except ModuleNotFoundError:
+    serial = None
 
 # =========================================================
 # SCRAPPER CONFIGURATION (CLI ARGUMENTS)
@@ -19,10 +24,13 @@ USE_SIMULATOR = (args.mode == "simulation")
 SERIAL_PORT = args.port
 BAUD_RATE = args.baud
 
-# Directory paths for Hot and Cold Storage
-BASE_DIR = "./data"
-LIVE_DIR = f"{BASE_DIR}/live"
-ARCHIVE_DIR = f"{BASE_DIR}/archive"
+# Directory paths for Hot and Cold Storage. These are based on this file's
+# location, so the scrapper works from the parent project folder or from UI/.
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+LIVE_DIR = DATA_DIR / "live"
+ARCHIVE_DIR = DATA_DIR / "archive"
+SIMULATOR_PATH = BASE_DIR / "simulator.py"
 
 # Maximum rows to keep in the Live CSV to maintain Streamlit performance
 MAX_LIVE_ROWS = 1000
@@ -41,34 +49,34 @@ SENSOR_MAP = {
 
 def setup_directories():
     """Ensures the base storage directories exist before scraping."""
-    os.makedirs(LIVE_DIR, exist_ok=True)
-    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    LIVE_DIR.mkdir(parents=True, exist_ok=True)
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 def manage_live_data(filename, header, row_data):
     """
     HOT STORAGE: Appends data to the live CSV and trims it if it exceeds MAX_LIVE_ROWS.
     This ensures app.py runs smoothly without memory overflow.
     """
-    filepath = f"{LIVE_DIR}/{filename}"
+    filepath = LIVE_DIR / filename
     
     # 1. Ensure file and header exist
-    if not os.path.exists(filepath):
-        with open(filepath, "w", encoding="utf-8") as f:
+    if not filepath.exists():
+        with filepath.open("w", encoding="utf-8") as f:
             f.write(header + "\n")
             
     # 2. Append the new row
-    with open(filepath, "a", encoding="utf-8") as f:
+    with filepath.open("a", encoding="utf-8") as f:
         f.write(row_data + "\n")
         
     # 3. Trim the file if it exceeds the maximum allowed rows
-    with open(filepath, "r", encoding="utf-8") as f:
+    with filepath.open("r", encoding="utf-8") as f:
         lines = f.readlines()
         
     # (+1 is to account for the header line)
     if len(lines) > MAX_LIVE_ROWS + 1:
         # Keep the header, and take the last MAX_LIVE_ROWS
         trimmed_lines = [lines[0]] + lines[-MAX_LIVE_ROWS:]
-        with open(filepath, "w", encoding="utf-8") as f:
+        with filepath.open("w", encoding="utf-8") as f:
             f.writelines(trimmed_lines)
 
 def save_to_archive(filename, header, row_data):
@@ -78,21 +86,45 @@ def save_to_archive(filename, header, row_data):
     """
     # Get current date in YYYY-MM-DD format
     current_date = datetime.now().strftime("%Y-%m-%d")
-    daily_folder = f"{ARCHIVE_DIR}/{current_date}"
+    daily_folder = ARCHIVE_DIR / current_date
     
     # Ensure today's folder exists
-    os.makedirs(daily_folder, exist_ok=True)
+    daily_folder.mkdir(parents=True, exist_ok=True)
     
-    filepath = f"{daily_folder}/{filename}"
+    filepath = daily_folder / filename
     
     # Ensure file and header exist
-    if not os.path.exists(filepath):
-        with open(filepath, "w", encoding="utf-8") as f:
+    if not filepath.exists():
+        with filepath.open("w", encoding="utf-8") as f:
             f.write(header + "\n")
             
     # Append the row permanently (No trimming)
-    with open(filepath, "a", encoding="utf-8") as f:
+    with filepath.open("a", encoding="utf-8") as f:
         f.write(row_data + "\n")
+
+def parse_data_line(line):
+    """Returns (pc_datetime, payload_text) for timestamped or plain data lines."""
+    if "data:" not in line:
+        return None
+
+    prefix, payload_text = line.split("data:", 1)
+    payload_text = payload_text.strip()
+    if not payload_text:
+        return None
+
+    pc_datetime = datetime.now()
+    if "->" in prefix:
+        raw_time = prefix.split("->", 1)[0].strip()
+        current_date = pc_datetime.strftime("%Y-%m-%d")
+        try:
+            pc_datetime = datetime.strptime(f"{current_date} {raw_time}", "%Y-%m-%d %H:%M:%S.%f")
+        except ValueError:
+            try:
+                pc_datetime = datetime.strptime(f"{current_date} {raw_time[:8]}", "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                pass
+
+    return pc_datetime, payload_text
 
 # =========================================================
 # MAIN SCRAPPING ROUTINE
@@ -100,19 +132,27 @@ def save_to_archive(filename, header, row_data):
 
 def main():
     setup_directories()
+    source = None
+    simulator_process = None
     
     # Initialize Data Source
     if USE_SIMULATOR:
         print("🔧 Mode: SIMULATOR")
         print("Launching simulator.py in the background...")
-        source = subprocess.Popen(
-            ["python", "simulator.py"], 
+        simulator_process = subprocess.Popen(
+            [sys.executable, str(SIMULATOR_PATH)],
             stdout=subprocess.PIPE, 
             stderr=subprocess.STDOUT, 
-            text=True
-        ).stdout
+            text=True,
+            cwd=BASE_DIR
+        )
+        source = simulator_process.stdout
     else:
         print(f"🔌 Mode: HARDWARE SERIAL ({SERIAL_PORT} @ {BAUD_RATE})")
+        if serial is None:
+            print("pyserial is not installed. Run: python -m pip install -r UI\\requirements.txt")
+            return
+
         try:
             source = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
             time.sleep(2) 
@@ -139,33 +179,26 @@ def main():
 
             print(line)
 
-            # 2. Filter lines that contain the exact scrapper target array
-            if " -> data: " in line:
+            # 2. Filter lines that contain the exact scrapper target array.
+            # Supports both Arduino timestamped output:
+            #   18:57:40.861 -> data: [...]
+            # and plain receiver serial output:
+            #   data: [...]
+            parsed_line = parse_data_line(line)
+            if parsed_line is not None:
                 try:
-                    parts = line.split(" -> data: ")
-                    
-                    # EXTRACT AND PARSE THE PC TIMESTAMP
-                    raw_time = parts[0].strip() # Contoh: "18:57:40.861"
-                    
-                    # Konversi waktu teks dari PC menjadi objek datetime sungguhan
-                    current_date = datetime.now().strftime("%Y-%m-%d")
-                    try:
-                        pc_datetime = datetime.strptime(f"{current_date} {raw_time}", "%Y-%m-%d %H:%M:%S.%f")
-                    except ValueError:
-                        # Fallback jika kebetulan milidetiknya tidak tercetak
-                        log_time = raw_time[:8]
-                        pc_datetime = datetime.strptime(f"{current_date} {log_time}", "%Y-%m-%d %H:%M:%S")
-
-                    # Gunakan format waktu bersih (tanpa ms) untuk konektivitas
+                    pc_datetime, json_str = parsed_line
                     base_log_time = pc_datetime.strftime("%H:%M:%S")
-                    
-                    json_str = parts[1].strip()
+
                     payload = json.loads(json_str)
+                    if not isinstance(payload, list) or len(payload) < 5:
+                        print("Warning: Received incomplete UI payload.")
+                        continue
 
                     # 3. Process Connectivity Array (Index 0)
                     conn_array = payload[0]
-                    if len(conn_array) > 0:
-                        conn_str = json.dumps(conn_array)
+                    if isinstance(conn_array, list) and len(conn_array) > 0:
+                        conn_str = json.dumps(conn_array, separators=(",", ":"))
                         csv_row = f'{base_log_time},"{conn_str}"'
                         
                         # Double-write strategy
@@ -176,7 +209,7 @@ def main():
                     for index, sensor_name in SENSOR_MAP.items():
                         sensor_records = payload[index]
                         
-                        if len(sensor_records) > 0:
+                        if isinstance(sensor_records, list) and len(sensor_records) > 0:
                             # Tentukan waktu mesh paling akhir sebagai "Jangkar" (Anchor)
                             latest_mesh_time = sensor_records[-1][0]
                             
@@ -209,11 +242,17 @@ def main():
         print("\nScrapper terminated by user.")
     finally:
         if USE_SIMULATOR:
-            source.close()
+            if source is not None:
+                source.close()
+            if simulator_process is not None:
+                simulator_process.terminate()
+                try:
+                    simulator_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    simulator_process.kill()
         else:
-            if source.is_open:
+            if source is not None and source.is_open:
                 source.close()
 
 if __name__ == "__main__":
     main()
-    

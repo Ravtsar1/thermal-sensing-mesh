@@ -108,7 +108,7 @@ with st.sidebar:
     st.divider()
     
     st.subheader("Data Management")
-    if st.button("Clear Live Graph", use_container_width=True, help="Wipes the current dashboard view. Does not affect permanent archive data."):
+    if st.button("Clear Live Graph", width="stretch", help="Wipes the current dashboard view. Does not affect permanent archive data."):
         clear_live_data()
         # Paksa Streamlit untuk memuat ulang halaman agar grafik langsung kosong
         st.rerun()
@@ -322,7 +322,7 @@ else:
                         height=450
                     )
 
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                     st.caption(f"Topology snapshot at time = {latest_timestamp}")
 
     except Exception as e:
@@ -344,7 +344,7 @@ with col1:
             if df is None:
                 st.write("No live data available.")
             else:
-                st.dataframe(df.tail(10), use_container_width=True)
+                st.dataframe(df.tail(10), width="stretch")
 
 with col2:
     with st.expander("View Raw Connectivity Data"):
@@ -354,7 +354,7 @@ with col2:
                 if conn_df.empty:
                     st.write("No live data available.")
                 else:
-                    st.dataframe(conn_df.tail(15), use_container_width=True)
+                    st.dataframe(conn_df.tail(15), width="stretch")
             except Exception as e:
                 st.error(e)
         else:

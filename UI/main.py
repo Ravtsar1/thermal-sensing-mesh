@@ -2,6 +2,9 @@ import argparse
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
 
 def main():
     # 1. Command Line Arguments Configuration
@@ -31,9 +34,9 @@ def main():
         # PROCESS 1: LAUNCH STREAMLIT DASHBOARD
         # =========================================================
         print("📊 [1/2] Loading Streamlit Dashboard...")
-        # Terminal command: python -m streamlit run app.py
-        streamlit_cmd = [sys.executable, "-m", "streamlit", "run", "app.py"]
-        p_streamlit = subprocess.Popen(streamlit_cmd)
+        # Terminal command: python -m streamlit run UI/app.py
+        streamlit_cmd = [sys.executable, "-m", "streamlit", "run", str(BASE_DIR / "app.py")]
+        p_streamlit = subprocess.Popen(streamlit_cmd, cwd=BASE_DIR)
         processes.append(p_streamlit)
 
         # Allow Streamlit some time to initialize before flooding it with data
@@ -42,7 +45,7 @@ def main():
         # =========================================================
         # PROCESS 2: LAUNCH DATA SCRAPPER
         # =========================================================
-        scrapper_cmd = [sys.executable, "scrapper.py", "--mode", args.mode]
+        scrapper_cmd = [sys.executable, str(BASE_DIR / "scrapper.py"), "--mode", args.mode]
         
         if args.mode == "real":
             scrapper_cmd.extend(["--port", args.port, "--baud", str(args.baudrate)])
@@ -50,7 +53,7 @@ def main():
         else:
             print("🔧 [2/2] Launching Scrapper (SIMULATION MODE)...")
             
-        p_scrapper = subprocess.Popen(scrapper_cmd)
+        p_scrapper = subprocess.Popen(scrapper_cmd, cwd=BASE_DIR)
         processes.append(p_scrapper)
 
         # =========================================================

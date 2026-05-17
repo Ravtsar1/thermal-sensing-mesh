@@ -56,11 +56,21 @@ The system uses a unified execution manager through `main.py`.
 
 You only need **one terminal window** to run the entire telemetry pipeline and dashboard simultaneously.
 
+The paths are resolved from the location of the `UI` folder, so the commands work from the parent project directory or from inside `UI/`.
+
 ---
 
 # 1. Simulation Mode
 
-Run the complete telemetry pipeline without physical hardware:
+Run the complete telemetry pipeline without physical hardware.
+
+From the parent project directory:
+
+```cmd
+python UI\main.py simulation
+```
+
+From inside the `UI/` folder:
 
 ```cmd
 python main.py simulation
@@ -80,11 +90,27 @@ To receive live telemetry from an ESP32 receiver connected via USB:
 
 Using the default baudrate (`115200`):
 
+From the parent project directory:
+
+```cmd
+python UI\main.py real COM3
+```
+
+From inside the `UI/` folder:
+
 ```cmd
 python main.py real COM3
 ```
 
 Using a custom baudrate:
+
+From the parent project directory:
+
+```cmd
+python UI\main.py real COM3 9600
+```
+
+From inside the `UI/` folder:
 
 ```cmd
 python main.py real COM3 9600

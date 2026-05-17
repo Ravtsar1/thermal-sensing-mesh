@@ -2,3 +2,4 @@ streamlit>=1.28
 pandas>=2.0
 plotly>=5.0
 streamlit-autorefresh>=1.0
+pyserial>=3.5
