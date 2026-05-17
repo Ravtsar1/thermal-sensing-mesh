@@ -63,6 +63,7 @@ private:
   static const unsigned long GATEWAY_TTL_MS = 6000;
   static const unsigned long ACK_TIMEOUT_MS = 12000;
   static const unsigned long SEND_RETRY_MS = 5000;
+  static const unsigned long SEND_FAIL_RETRY_MS = 1000;
 
   // One row in the local connectivity matrix / adjacency list.
   struct GraphNode {

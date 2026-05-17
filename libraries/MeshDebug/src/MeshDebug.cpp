@@ -212,6 +212,13 @@ void MeshDebug::receivedCallback(uint32_t from, String &msg) {
 }
 
 void MeshDebug::newConnectionCallback(uint32_t nodeId) {
+  // painlessMesh can report a new peer before it reports a full changed-layout
+  // event. Notify the routing layer here too so a replacement route is used as
+  // soon as it appears.
+  if (changedCallback != nullptr) {
+    changedCallback();
+  }
+
   if (debugEnabled) {
     Serial.printf("Mesh new node: %lu\n", (unsigned long)nodeId);
   }

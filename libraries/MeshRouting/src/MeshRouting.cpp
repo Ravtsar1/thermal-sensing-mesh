@@ -86,6 +86,28 @@ void MeshRouting::markLinksDirty() {
   // Called by the painlessMesh changed-connection callback. The actual LINKS
   // packet is sent from update() so it does not run inside the callback stack.
   linksDirty = true;
+
+  // If a route breaks while a batch ACK is pending, the ACK may never return
+  // through the old path. Keep the readings in RAM and retry them through the
+  // rebuilt painlessMesh route instead of waiting for the full ACK timeout.
+  if (waitingForAck) {
+    waitingForAck = false;
+    pendingBatchId = 0;
+    pendingToSequence = 0;
+    Serial.println("Mesh topology changed; pending history will retry");
+  }
+
+  // Topology recovery should happen faster than temperature and LoRa cadence:
+  // publish fresh LINKS and let sensor nodes try queued history on the next
+  // update pass. The gateway only sends a fresh GW beacon here so route search
+  // does not force extra DS18B20 LoRa uploads and waste battery.
+  lastLinkReportMs = millis() - LINK_REPORT_INTERVAL_MS;
+
+  if (isGateway) {
+    lastGatewayBeaconMs = millis() - GATEWAY_BEACON_INTERVAL_MS;
+  } else {
+    lastHistorySendMs = millis() - SEND_RETRY_MS;
+  }
 }
 
 bool MeshRouting::isTimeReadyForReadings() {
@@ -718,6 +740,10 @@ void MeshRouting::trySendHistory() {
     Serial.printf("History batch %lu send failed toward gateway %lu\n",
                   (unsigned long)batchId,
                   (unsigned long)gateway);
+    // A failed sendSingle() means painlessMesh did not have a usable route at
+    // this instant. Probe again sooner, but keep successful sends on the normal
+    // SEND_RETRY_MS cadence so LoRa traffic does not increase.
+    lastHistorySendMs = millis() - (SEND_RETRY_MS - SEND_FAIL_RETRY_MS);
   }
 }
 
@@ -853,9 +879,16 @@ void MeshRouting::rememberGateway(uint32_t nodeId, const char *reason) {
     return;
   }
 
+  bool routeWasStale = gatewayNodeId == 0 || millis() - lastGatewaySeenMs > GATEWAY_TTL_MS;
   bool changed = gatewayNodeId != nodeId;
   gatewayNodeId = nodeId;
   lastGatewaySeenMs = millis();
+
+  if (changed || routeWasStale) {
+    // When the gateway appears or reappears, retry saved readings immediately.
+    // Regular one-second GW refreshes do not reset this timer.
+    lastHistorySendMs = millis() - SEND_RETRY_MS;
+  }
 
   if (changed) {
     Serial.printf("Gateway discovered from %s: %lu\n", reason, (unsigned long)gatewayNodeId);
