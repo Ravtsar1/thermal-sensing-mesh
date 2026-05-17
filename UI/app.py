@@ -1,8 +1,12 @@
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+import json
 from pathlib import Path
-from streamlit_autorefresh import st_autorefresh
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ModuleNotFoundError:
+    st_autorefresh = None
 
 # =========================================================
 # PAGE CONFIGURATION & CONSTANTS
@@ -13,20 +17,72 @@ st.set_page_config(
     layout="wide"
 )
 
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+
 SENSOR_FILES = {
-    "ds18b20": "./data/ds18b20.csv",
-    "dht11": "./data/dht11.csv",
-    "dht22": "./data/dht22.csv",
-    "bme280": "./data/bme280.csv"
+    "ds18b20": DATA_DIR / "ds18b20.csv",
+    "dht11": DATA_DIR / "dht11.csv",
+    "dht22": DATA_DIR / "dht22.csv",
+    "bme280": DATA_DIR / "bme280.csv"
 }
 
-CONNECTIVITY_FILE = "./data/connectivity.csv"
+CONNECTIVITY_FILE = DATA_DIR / "connectivity.csv"
+
+NODE_POSITIONS = {
+    "receiver": {"x": 0.5, "y": 1.2},
+    "ds18b20": {"x": 0.5, "y": 0.85},
+    "dht11":   {"x": 0.2, "y": 0.45},
+    "dht22":   {"x": 0.8, "y": 0.45},
+    "bme280":  {"x": 0.5, "y": 0.05}
+}
+
+EXPECTED_EDGES = [
+    ("bme280", "dht11"),
+    ("bme280", "dht22"),
+    ("bme280", "ds18b20"),
+    ("dht11", "dht22"),
+    ("dht11", "ds18b20"),
+    ("dht22", "ds18b20"),
+    ("ds18b20", "receiver")
+]
+
+
+def parse_connectivity_array(raw_value):
+    try:
+        values = json.loads(str(raw_value))
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(values, list) or len(values) != len(EXPECTED_EDGES):
+        return None
+
+    parsed_values = []
+    for value in values:
+        if isinstance(value, bool):
+            parsed_values.append(1 if value else 0)
+            continue
+
+        if isinstance(value, (int, float)) and int(value) in (0, 1):
+            parsed_values.append(int(value))
+            continue
+
+        lowered_value = str(value).strip().lower()
+        if lowered_value in ("1", "true"):
+            parsed_values.append(1)
+        elif lowered_value in ("0", "false"):
+            parsed_values.append(0)
+        else:
+            return None
+
+    return parsed_values
 
 # =========================================================
 # AUTO REFRESH CONFIGURATION
 # =========================================================
 # Refresh the dashboard every 1000 milliseconds (1 second)
-st_autorefresh(interval=1000, key="refresh")
+if st_autorefresh is not None:
+    st_autorefresh(interval=1000, key="refresh")
 
 # =========================================================
 # DASHBOARD HEADER
@@ -48,12 +104,20 @@ for sensor_name, filename in SENSOR_FILES.items():
     try:
         # Use on_bad_lines='skip' to prevent crashes during concurrent read/write operations
         df = pd.read_csv(filename, on_bad_lines='skip')
+        if not {"time", "temp"}.issubset(df.columns):
+            sensor_data[sensor_name] = None
+            continue
+
+        df = df.dropna(subset=["time", "temp"]).copy()
+        df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
+        df = df.dropna(subset=["temp"])
+
         if df.empty:
             sensor_data[sensor_name] = None
         else:
             sensor_data[sensor_name] = df
     except Exception as e:
-        st.error(f"Failed to read {filename}: {e}")
+        st.error(f"Failed to read {path}: {e}")
         sensor_data[sensor_name] = None
 
 # =========================================================
@@ -72,7 +136,7 @@ for i, (sensor_name, df) in enumerate(sensor_data.items()):
             current_temp = latest_record["temp"]
             last_update = latest_record["time"]
             
-            st.metric(label=sensor_name.upper(), value=f"{current_temp:.1f} °C")
+            st.metric(label=sensor_name.upper(), value=f"{current_temp:.1f} C")
             st.caption(f"Last update: {last_update}")
 
 st.divider()
@@ -118,28 +182,52 @@ else:
     try:
         conn_df = pd.read_csv(CONNECTIVITY_FILE, on_bad_lines='skip')
 
-        if conn_df.empty:
+        if not {"time", "connectivity"}.issubset(conn_df.columns):
+            st.warning(f"Connectivity file has invalid columns: {CONNECTIVITY_FILE}")
+        elif conn_df.empty:
             st.warning(f"Connectivity file is empty: {CONNECTIVITY_FILE}")
         else:
-            latest_timestamp = conn_df["time"].iloc[-1]
-            topology_snapshot = conn_df[conn_df["time"] == latest_timestamp]
+            conn_df = conn_df.dropna(subset=["time", "connectivity"]).copy()
+
+            if conn_df.empty:
+                st.warning(f"Connectivity file has no valid rows: {CONNECTIVITY_FILE}")
+                st.stop()
+
+            latest_timestamp = None
+            latest_connectivity = None
+            for _, row in conn_df.iloc[::-1].iterrows():
+                parsed_connectivity = parse_connectivity_array(row["connectivity"])
+                if parsed_connectivity is not None:
+                    latest_timestamp = row["time"]
+                    latest_connectivity = parsed_connectivity
+                    break
+
+            if latest_connectivity is None:
+                st.warning(f"Connectivity file has no valid 7-value array rows: {CONNECTIVITY_FILE}")
+                st.stop()
+
+            topology_rows = []
+            for edge_index, (source, target) in enumerate(EXPECTED_EDGES):
+                topology_rows.append({
+                    "time": latest_timestamp,
+                    "source": source,
+                    "target": target,
+                    "connected": latest_connectivity[edge_index]
+                })
+
+            topology_snapshot = pd.DataFrame(topology_rows)
 
             # Initialize Plotly Figure
             fig = go.Figure()
-
-            # Define fixed logical coordinates for mesh nodes (Scale: 0.0 to 1.0)
-            NODE_POSITIONS = {
-                "ds18b20": {"x": 0.5, "y": 1.0},   # Top (Gateway)
-                "dht11":   {"x": 0.2, "y": 0.5},   # Left Node
-                "dht22":   {"x": 0.8, "y": 0.5},   # Right Node
-                "bme280":  {"x": 0.5, "y": 0.0}    # Bottom Node
-            }
 
             # 1. Draw Network Edges (Connections)
             for _, row in topology_snapshot.iterrows():
                 source = row["source"]
                 target = row["target"]
                 is_connected = int(row["connected"])
+
+                if source not in NODE_POSITIONS or target not in NODE_POSITIONS:
+                    continue
 
                 x0, y0 = NODE_POSITIONS[source]["x"], NODE_POSITIONS[source]["y"]
                 x1, y1 = NODE_POSITIONS[target]["x"], NODE_POSITIONS[target]["y"]
@@ -161,9 +249,20 @@ else:
             node_colors = []
             node_labels = []
 
+            receiver_rows = topology_snapshot[
+                (topology_snapshot["source"] == "receiver") |
+                (topology_snapshot["target"] == "receiver")
+            ]
+            receiver_is_connected = not receiver_rows.empty and int(receiver_rows["connected"].max()) == 1
+
             for sensor_name in NODE_POSITIONS.keys():
                 node_x.append(NODE_POSITIONS[sensor_name]["x"])
                 node_y.append(NODE_POSITIONS[sensor_name]["y"])
+
+                if sensor_name == "receiver":
+                    node_colors.append("#00cc96" if receiver_is_connected else "#ff4b4b")
+                    node_labels.append("<b>RECEIVER</b>")
+                    continue
                 
                 df = sensor_data.get(sensor_name)
                 if df is None:
@@ -172,7 +271,7 @@ else:
                 else:
                     current_temp = df.iloc[-1]["temp"]
                     node_colors.append("#00cc96")
-                    node_labels.append(f"<b>{sensor_name.upper()}</b><br>{current_temp:.1f} °C")
+                    node_labels.append(f"<b>{sensor_name.upper()}</b><br>{current_temp:.1f} C")
 
             fig.add_trace(go.Scatter(
                 x=node_x, y=node_y,
@@ -190,13 +289,13 @@ else:
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
                 xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[0, 1]),
-                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.2, 1.2]),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.1, 1.3]),
                 margin=dict(l=0, r=0, t=20, b=20),
                 height=400
             )
 
             # Render utilizing Streamlit's optimized Plotly component
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             st.caption(f"Topology snapshot at time = {latest_timestamp}")
 
     except Exception as e:
@@ -219,7 +318,7 @@ with col1:
                 st.write("No data available.")
             else:
                 # Display only the last 10 rows to maintain UI responsiveness
-                st.dataframe(df.tail(10), use_container_width=True)
+                st.dataframe(df.tail(10), width="stretch")
 
 with col2:
     with st.expander("View Raw Connectivity Data"):
@@ -227,7 +326,7 @@ with col2:
             try:
                 conn_df = pd.read_csv(CONNECTIVITY_FILE)
                 # Display the last 15 recorded connections
-                st.dataframe(conn_df.tail(15), use_container_width=True)
+                st.dataframe(conn_df.tail(15), width="stretch")
             except Exception as e:
                 st.error(e)
         else:
