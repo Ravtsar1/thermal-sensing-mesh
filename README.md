@@ -7,8 +7,8 @@ history batches only after a route exists.
 
 This `ui-feature` branch also prepares receiver Serial output for a separate
 user interface. The LoRa receiver keeps its existing debug prints, but it also
-prints one filterable line beginning with `data:` whenever usable UI data is
-available.
+prints one filterable line beginning with `data:` for both connected and
+disconnected UI states.
 
 The current firmware uses five ESP32 roles:
 
@@ -106,8 +106,14 @@ The receiver prints one `data:` line for each LoRa `BATCH` it receives. Because
 each batch belongs to one source sensor, the matching sensor history array is
 filled and the other sensor arrays are usually empty. If a sensor was
 disconnected for a while, its next delivered batch may contain several history
-rows. If the LoRa link becomes stale, the receiver prints one `data:` line with
-the seventh connectivity value set to `0` and empty temperature arrays.
+rows.
+
+If the receiver has no fresh LoRa batch, it periodically prints this disconnected
+UI state:
+
+```text
+data: [[0,0,0,0,0,0,0],[],[],[],[]]
+```
 
 Other Serial prints such as `LoRa in`, `LoRa ACK out`, and packet summaries are
 kept for debugging. UI code should ignore those lines and only parse lines that

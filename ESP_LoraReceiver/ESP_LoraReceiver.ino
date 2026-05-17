@@ -13,6 +13,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 // OLED, but every LoRa BATCH may contain several historical records.
 const char *SENSOR_NAMES[] = {"DS18B20", "DHT11", "DHT22", "BME280"};
 const char *UI_SENSOR_NAMES[] = {"BME280", "DHT11", "DHT22", "DS18B20"};
+static const unsigned long UI_DISCONNECTED_PRINT_INTERVAL_MS = 1000UL;
 float temperatures[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 bool sensorOnline[4] = {false, false, false, false};
 uint32_t sensorTimes[4] = {0, 0, 0, 0};
@@ -25,7 +26,7 @@ unsigned long lastDisplayMs = 0;
 unsigned long lastPacketMs = 0;
 unsigned long lastLoraRetryMs = 0;
 uint32_t lastSequence = 0;
-bool loraStaleLinePrinted = false;
+unsigned long lastUiDisconnectedPrintMs = 0;
 
 bool packetIsFresh() {
   // If no LoRa packet has arrived recently, the OLED shows stale data as "-".
@@ -66,6 +67,12 @@ void updateUiConnectivity(JsonArray connectivity) {
     uiConnectivity[i] = (connectivity[i] | 0) == 1;
   }
   uiConnectivity[6] = true;
+}
+
+void clearUiConnectivity() {
+  for (uint8_t i = 0; i < 7; i++) {
+    uiConnectivity[i] = false;
+  }
 }
 
 void printUiConnectivityArray() {
@@ -124,18 +131,26 @@ void printUiDataLine(const char *sensorName, JsonArray records, bool hasRecords)
   Serial.println("]");
 }
 
-void printUiStaleLineIfNeeded() {
-  if (lastPacketMs == 0 || packetIsFresh() || loraStaleLinePrinted) {
-    return;
-  }
-
-  // Once LoRa has gone quiet, emit one UI line with empty temperature arrays so
-  // the UI can mark the gateway-receiver link as disconnected.
-  uiConnectivity[6] = false;
+void printUiDisconnectedDataLine() {
+  clearUiConnectivity();
   StaticJsonDocument<16> emptyDoc;
   JsonArray emptyRecords = emptyDoc.to<JsonArray>();
   printUiDataLine("", emptyRecords, false);
-  loraStaleLinePrinted = true;
+}
+
+void printUiDisconnectedLineIfNeeded() {
+  if (packetIsFresh()) {
+    return;
+  }
+
+  if (millis() - lastUiDisconnectedPrintMs < UI_DISCONNECTED_PRINT_INTERVAL_MS) {
+    return;
+  }
+
+  // While no fresh LoRa batch is available, keep emitting a valid empty UI
+  // packet so the UI does not have to treat Serial silence as a special case.
+  lastUiDisconnectedPrintMs = millis();
+  printUiDisconnectedDataLine();
 }
 
 void updateDisplay() {
@@ -302,7 +317,6 @@ void handleTemperaturePacket(const String &packet) {
     updateUiConnectivity(doc["conn"].as<JsonArray>());
     lastSequence = doc["s"] | 0;
     lastPacketMs = millis();
-    loraStaleLinePrinted = false;
 
     Serial.println("LoRa in: " + packet);
     printTemperatureSummary();
@@ -333,7 +347,6 @@ void handleTemperaturePacket(const String &packet) {
   }
 
   lastPacketMs = millis();
-  loraStaleLinePrinted = false;
 
   Serial.println("LoRa in: " + packet);
   printTemperatureSummary();
@@ -373,6 +386,7 @@ void setup() {
   initLora();
 
   Serial.println("LoRa OLED station ready");
+  printUiDisconnectedDataLine();
 }
 
 void loop() {
@@ -380,7 +394,7 @@ void loop() {
   // most one waiting packet, then refresh the OLED at a fixed interval.
   retryLoraIfNeeded();
   receiveLoraPacket();
-  printUiStaleLineIfNeeded();
+  printUiDisconnectedLineIfNeeded();
 
   if (millis() - lastDisplayMs >= DISPLAY_INTERVAL_MS) {
     lastDisplayMs = millis();
