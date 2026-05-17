@@ -11,7 +11,7 @@ static const uint16_t MESH_PORT = 5555;
 static const char *NODE_NAME = "DS18B20";
 
 static const unsigned long SENSOR_INTERVAL_MS = 2500UL;
-static const unsigned long REMOTE_SENSOR_TIMEOUT_MS = 30000UL;
+static const unsigned long REMOTE_SENSOR_TIMEOUT_MS = 6000UL;
 static const unsigned long LORA_LINK_TIMEOUT_MS = 10000UL;
 static const unsigned long LORA_ACK_TIMEOUT_MS = 450UL;
 static const unsigned long LORA_RETRY_INTERVAL_MS = 5000UL;

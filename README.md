@@ -156,28 +156,28 @@ begin with `data:`.
 | DHT22 simulated temperature reading | `2500 ms` |
 | BME280 simulated temperature reading | `2500 ms` |
 | DS18B20 real temperature reading | `2500 ms` |
-| Gateway time beacon used for sensor synchronization | `5000 ms` |
+| Gateway time beacon used for sensor synchronization | `1000 ms` |
 
 ### Mesh Routing
 
 | Behavior | Default interval |
 | --- | --- |
-| `LINKS` connectivity report | `30000 ms` |
-| Initial `LINKS` startup jitter | `0-4000 ms` |
-| Learned link freshness timeout | `90000 ms` |
-| DS18B20 gateway `GW` beacon | `5000 ms` |
-| Learned gateway freshness timeout | `45000 ms` |
+| `LINKS` connectivity report | `1000 ms` |
+| Initial `LINKS` startup jitter | `0-150 ms` |
+| Learned link freshness timeout | `3500 ms` |
+| DS18B20 gateway `GW` beacon | `1000 ms` |
+| Learned gateway freshness timeout | `6000 ms` |
 | Mesh history send retry | `5000 ms` |
 | Mesh `BATCH_ACK` timeout | `12000 ms` |
 
 Connectivity reports are also triggered after painlessMesh reports a topology
-change, so a node may publish `LINKS` earlier than the normal 30 second period.
+change, so a node may publish `LINKS` earlier than the normal 1 second period.
 
 ### Gateway And LoRa Receiver
 
 | Behavior | Default interval |
 | --- | --- |
-| Remote mesh sensor LED freshness on gateway | `30000 ms` |
+| Remote mesh sensor LED freshness on gateway | `6000 ms` |
 | LoRa receiver ACK freshness on gateway | `10000 ms` |
 | Gateway wait time for LoRa ACK after sending | `450 ms` |
 | Gateway LoRa module retry after init failure | `5000 ms` |

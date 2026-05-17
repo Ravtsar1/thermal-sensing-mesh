@@ -10,6 +10,7 @@ MeshRouting::MeshRouting()
       historyCount(0),
       nextReadingSequence(1),
       nextBatchId(1),
+      lastReadingTimeMs(0),
       waitingForAck(false),
       pendingBatchId(0),
       pendingToSequence(0),
@@ -56,6 +57,11 @@ void MeshRouting::getProjectConnectivity(bool connectivity[6]) {
     return;
   }
 
+  // The gateway includes connectivity in every LoRa packet. Refresh its own
+  // direct neighbor list immediately so the receiver does not see an old
+  // cached gateway edge while the gateway LED already reflects the new state.
+  updateSelfLinks();
+
   for (uint8_t i = 0; i < 6; i++) {
     connectivity[i] = false;
   }
@@ -91,8 +97,9 @@ void MeshRouting::update() {
     return;
   }
 
-  // Periodic connectivity report. These packets are infrequent compared with
-  // temperature samples and are used for visibility/debugging.
+  // Connectivity must move faster than temperature sampling. Each node reports
+  // its current neighbor list often, and topology-change callbacks mark it
+  // dirty so a changed link is published on the next loop pass.
   if (linksDirty || millis() - lastLinkReportMs >= LINK_REPORT_INTERVAL_MS) {
     publishLinks();
   }
@@ -123,9 +130,10 @@ void MeshRouting::addLocalReading(float temperature) {
     Serial.println("History full; oldest reading dropped");
   }
 
+  uint32_t readingTime = monotonicReadingTimeMs();
   ReadingRecord &record = history[historyCount++];
   record.sequence = nextReadingSequence++;
-  record.timeMs = authorityTimeMs();
+  record.timeMs = readingTime;
   record.temperature = temperature;
 
   Serial.printf("Saved %s reading #%lu at %lu ms: %.1f C\n",
@@ -171,8 +179,8 @@ void MeshRouting::handleMessage(uint32_t from, const String &msg) {
 }
 
 void MeshRouting::publishLinks() {
-  // LINKS is the lower-priority topology report. It is useful for understanding
-  // the mesh, but data delivery no longer depends on it being perfect.
+  // LINKS is the fast topology report. It does not carry temperature history;
+  // it only tells the mesh who this node can currently see.
   updateSelfLinks();
 
   uint32_t neighbors[MAX_NEIGHBORS];
@@ -248,6 +256,24 @@ uint32_t MeshRouting::authorityTimeMs() {
   }
 
   return millis();
+}
+
+uint32_t MeshRouting::monotonicReadingTimeMs() {
+  uint32_t readingTime = authorityTimeMs();
+
+  if (nextReadingSequence > 1 && readingTime <= lastReadingTimeMs) {
+    if (lastReadingTimeMs < UINT32_MAX) {
+      readingTime = lastReadingTimeMs + 1;
+    } else {
+      readingTime = UINT32_MAX;
+    }
+
+    Serial.printf("Reading time adjusted to avoid rollback: %lu ms\n",
+                  (unsigned long)readingTime);
+  }
+
+  lastReadingTimeMs = readingTime;
+  return readingTime;
 }
 
 void MeshRouting::updateSelfLinks() {
@@ -789,9 +815,14 @@ void MeshRouting::handleGatewayBeacon(JsonDocument &doc) {
   }
 
   const char *name = doc["name"] | "gateway";
-  StaticJsonDocument<64> emptyNeighborsDoc;
-  JsonArray emptyNeighbors = emptyNeighborsDoc.createNestedArray("n");
-  updateGraphNode(nodeId, name, true, emptyNeighbors);
+  int gatewayIndex = ensureGraphNode(nodeId);
+  if (gatewayIndex >= 0) {
+    GraphNode &gatewayNode = graph[gatewayIndex];
+    gatewayNode.gateway = true;
+    gatewayNode.lastSeenMs = millis();
+    strncpy(gatewayNode.name, name, sizeof(gatewayNode.name) - 1);
+    gatewayNode.name[sizeof(gatewayNode.name) - 1] = '\0';
+  }
 
   rememberGateway(nodeId, "GW");
 

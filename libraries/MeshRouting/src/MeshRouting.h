@@ -54,13 +54,13 @@ private:
   static const uint8_t MAX_GRAPH_NODES = 10;
   static const uint8_t MAX_NEIGHBORS = 8;
   static const uint8_t MAX_PATH_NODES = 10;
-  static const uint8_t MAX_HISTORY_RECORDS = 120;
+  static const uint8_t MAX_HISTORY_RECORDS = 240;
   static const uint8_t BATCH_RECORD_LIMIT = 4;
-  static const unsigned long LINK_REPORT_INTERVAL_MS = 30000;
-  static const unsigned long LINK_REPORT_JITTER_MS = 4000;
-  static const unsigned long LINK_TTL_MS = 90000;
-  static const unsigned long GATEWAY_BEACON_INTERVAL_MS = 5000;
-  static const unsigned long GATEWAY_TTL_MS = 45000;
+  static const unsigned long LINK_REPORT_INTERVAL_MS = 1000;
+  static const unsigned long LINK_REPORT_JITTER_MS = 150;
+  static const unsigned long LINK_TTL_MS = 3500;
+  static const unsigned long GATEWAY_BEACON_INTERVAL_MS = 1000;
+  static const unsigned long GATEWAY_TTL_MS = 6000;
   static const unsigned long ACK_TIMEOUT_MS = 12000;
   static const unsigned long SEND_RETRY_MS = 5000;
 
@@ -92,6 +92,7 @@ private:
   uint8_t historyCount;
   uint32_t nextReadingSequence;
   uint32_t nextBatchId;
+  uint32_t lastReadingTimeMs;
 
   bool waitingForAck;
   uint32_t pendingBatchId;
@@ -111,6 +112,7 @@ private:
   void publishLinks();
   void publishGatewayBeacon();
   uint32_t authorityTimeMs();
+  uint32_t monotonicReadingTimeMs();
   void updateSelfLinks();
   void updateGraphNode(uint32_t nodeId, const char *name, bool gateway, JsonArray neighbors);
   int findGraphIndex(uint32_t nodeId);

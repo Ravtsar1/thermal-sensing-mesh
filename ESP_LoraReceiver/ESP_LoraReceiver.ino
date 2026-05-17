@@ -59,19 +59,20 @@ int8_t uiSensorIndexByName(const char *name) {
   return -1;
 }
 
-void updateUiConnectivity(JsonArray connectivity) {
-  // The first six values come from the gateway's learned mesh graph. The
-  // seventh value is true whenever this receiver has just received LoRa data.
-  for (uint8_t i = 0; i < 6 && i < connectivity.size(); i++) {
-    uiConnectivity[i] = (connectivity[i] | 0) == 1;
-  }
-  uiConnectivity[6] = true;
-}
-
 void clearUiConnectivity() {
   for (uint8_t i = 0; i < 7; i++) {
     uiConnectivity[i] = false;
   }
+}
+
+void updateUiConnectivity(JsonArray connectivity) {
+  // The first six values come from the gateway's learned mesh graph. The
+  // seventh value is true whenever this receiver has just received LoRa data.
+  clearUiConnectivity();
+  for (uint8_t i = 0; i < 6 && i < connectivity.size(); i++) {
+    uiConnectivity[i] = (connectivity[i] | 0) == 1;
+  }
+  uiConnectivity[6] = true;
 }
 
 void printUiConnectivityArray() {
