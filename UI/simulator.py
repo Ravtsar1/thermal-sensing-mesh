@@ -1,105 +1,148 @@
 import time
 import random
-import csv
 import json
 from datetime import datetime
-from pathlib import Path
 
 # =========================================================
-# SYSTEM CONFIGURATION
+# SIMULATOR CONFIGURATION
 # =========================================================
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-SENSORS = ["ds18b20", "dht11", "dht22", "bme280"]
 
-# Defined network topology (source node -> target node)
-EDGES = [
-    ("bme280", "dht11"),
-    ("bme280", "dht22"),
-    ("bme280", "ds18b20"),
-    ("dht11", "dht22"),
-    ("dht11", "ds18b20"),
-    ("dht22", "ds18b20"),
-    ("ds18b20", "receiver")
-]
-
-RECEIVER_EDGE = ("ds18b20", "receiver")
-
-# Logical temperature ranges for realistic simulation (Min, Max)
-SENSOR_RANGES = {
-    "ds18b20": (25.0, 35.0),
-    "dht11": (20.0, 40.0),
-    "dht22": (22.0, 28.0),
-    "bme280": (26.0, 32.0)
+# Target array index mapping for the scrapper: 
+# [connectivity, BME280, DHT11, DHT22, DS18B20]
+DATA_INDEX = {
+    "BME280": 1,
+    "DHT11": 2,
+    "DHT22": 3,
+    "DS18B20": 4
 }
 
-# =========================================================
-# DATA RESET PROMPT
-# =========================================================
-DATA_DIR.mkdir(exist_ok=True)
+# Transmission order priority (Round-Robin format)
+DISPLAY_ORDER = ["DS18B20", "DHT11", "DHT22", "BME280"]
 
-print("🛠️  Thermal Mesh Simulator")
-user_choice = input("Do you want to clear existing CSV data before starting? (y/n): ").strip().lower()
+# Internal State Variables
+mesh_time_ms = 2500
+packet_seq = 1
+sensor_seqs = {s: 1 for s in DISPLAY_ORDER}
+queues = {s: [] for s in DISPLAY_ORDER}
 
-if user_choice == 'y':
-    for file_path in DATA_DIR.glob("*.csv"):
-        file_path.unlink()
-    print("✅ Legacy data cleared successfully!\n")
-else:
-    print("▶️ Appending to existing data logs...\n")
+# Base temperatures for realistic fluctuations
+last_known_temps = {
+    "DS18B20": 27.0,
+    "DHT11": 31.2,
+    "DHT22": 25.4,
+    "BME280": 28.1
+}
+
+# Tracks whose turn it is to transmit in the Round-Robin cycle
+current_turn_idx = 0  
 
 # =========================================================
-# CSV HEADER INITIALIZATION
+# HELPER FUNCTIONS
 # =========================================================
-# Ensure files exist and have proper headers
-for sensor in SENSORS:
-    file_path = DATA_DIR / f"{sensor}.csv"
-    if not file_path.exists():
-        with file_path.open("w") as f:
-            f.write("time,temp\n")
 
-conn_path = DATA_DIR / "connectivity.csv"
-if not conn_path.exists() or not conn_path.read_text(encoding="utf-8").startswith("time,connectivity"):
-    with conn_path.open("w") as f:
-        f.write("time,connectivity\n")
+def get_timestamp():
+    """Generates a timestamp in HH:MM:SS.mmm format"""
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+def log_print(msg):
+    """Prints a log message with a timestamp prefix, simulating Arduino Serial Monitor"""
+    print(f"{get_timestamp()} -> {msg}", flush=True)
 
 # =========================================================
 # MAIN SIMULATION LOOP
 # =========================================================
-print("📡 Initiating Telemetry Transmission...")
-print("Press Ctrl+C to terminate the process.\n")
+
+print("Initializing Gateway Simulation...")
+print("Data pipe is ready for the scrapper.") 
+print("Press Ctrl+C to terminate.\n")
 
 try:
     while True:
-        # Standardize timestamp format
-        current_timestamp = datetime.now().strftime("%H:%M:%S")
-
-        # 1. Generate and Append Sensor Telemetry
-        for sensor in SENSORS:
-            min_temp, max_temp = SENSOR_RANGES[sensor]
-            
-            # Generate randomized temperature values within specified limits
-            simulated_temp = random.uniform(min_temp, max_temp)
-            
-            # Safely append data (File is opened and closed immediately)
-            with (DATA_DIR / f"{sensor}.csv").open("a") as f:
-                f.write(f"{current_timestamp},{simulated_temp:.2f}\n")
-
-        # 2. Generate and Append Network Connectivity Status
-        connectivity_values = []
-        for source, target in EDGES:
-            # Stochastic model: 90% chance of connection (1), 10% packet loss/disconnect (0)
-            is_connected = 1 if (source, target) == RECEIVER_EDGE or random.random() > 0.1 else 0
-            connectivity_values.append(is_connected)
-
-        with conn_path.open("a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([current_timestamp, json.dumps(connectivity_values, separators=(",", ":"))])
-
-        print(f"[{current_timestamp}] Telemetry batch transmitted and logged.")
+        # Simulate mesh time delta (approx 2.5 seconds elapsed per loop)
+        step_ms = random.randint(2400, 2600)
+        mesh_time_ms += step_ms
         
-        # Transmission interval (2 seconds)
-        time.sleep(2)
+        # 1. RECORD LOCAL GATEWAY DATA (DS18B20)
+        # As the local sensor on the gateway, DS18B20 NEVER experiences packet loss.
+        temp_ds = round(last_known_temps["DS18B20"] + random.uniform(-0.5, 0.5), 1)
+        last_known_temps["DS18B20"] = temp_ds
+        queues["DS18B20"].append([sensor_seqs["DS18B20"], mesh_time_ms, temp_ds])
+        sensor_seqs["DS18B20"] += 1
+        
+        # 2. RECORD REMOTE MESH NODE DATA via WiFi
+        for sensor in ["BME280", "DHT11", "DHT22"]:
+            # Simulate a 30% chance of packet loss over the mesh network
+            if random.random() > 0.3: 
+                temp_val = round(last_known_temps[sensor] + random.uniform(-0.2, 0.2), 1)
+                last_known_temps[sensor] = temp_val
+                queues[sensor].append([sensor_seqs[sensor], mesh_time_ms, temp_val])
+                sensor_seqs[sensor] += 1
+
+        # 3. LORA TRANSMISSION BASED ON ROUND-ROBIN QUEUE
+        target_sensor = DISPLAY_ORDER[current_turn_idx]
+        current_turn_idx = (current_turn_idx + 1) % len(DISPLAY_ORDER)
+        
+        # Only transmit if the target sensor has pending records in its queue
+        if len(queues[target_sensor]) > 0:
+            batch_records = queues[target_sensor]
+            
+            # Format payload for scrapper (strip sequence numbers, keep [time, temp])
+            clean_records = [[row[1], row[2]] for row in batch_records]
+            
+            # Log history lines
+            for record in batch_records:
+                log_print(f"{target_sensor} history seq {record[0]} at {record[1]} ms = {record[2]:.1f} C")
+            
+            # Generate random 7-bit connectivity array (assuming index 0 and 6 are gateways/always 1)
+            conn_array = [random.choice([0, 1]) for _ in range(7)]
+            conn_array[0] = 1 
+            conn_array[6] = 1 
+            
+            # Construct incoming LoRa JSON payload
+            lora_json = {
+                "t": "BATCH",
+                "s": packet_seq,
+                "src": 4264595069,
+                "name": target_sensor,
+                "batch": packet_seq,
+                "fromSeq": batch_records[0][0],
+                "toSeq": batch_records[-1][0],
+                "sentAt": mesh_time_ms + random.randint(10, 25),
+                "conn": conn_array,
+                "records": batch_records
+            }
+            log_print(f"LoRa in: {json.dumps(lora_json, separators=(',', ':'))}")
+            log_print(f"Packet {packet_seq} received")
+            
+            # Print temperature summary mimicking OLED/Serial output
+            for i, sensor in enumerate(DISPLAY_ORDER):
+                if sensor == target_sensor:
+                    latest_rec = batch_records[-1]
+                    log_print(f"{i+1} {sensor}: {latest_rec[2]:.1f} C at {latest_rec[1]} ms (seq {latest_rec[0]})")
+                else:
+                    log_print(f"{i+1} {sensor}: disconnected")
+            
+            # ---------------------------------------------------------
+            # TARGET SCRAPPER OUTPUT
+            # Format: [connectivity, BME280, DHT11, DHT22, DS18B20]
+            # ---------------------------------------------------------
+            data_output = [conn_array, [], [], [], []]
+            data_output[DATA_INDEX[target_sensor]] = clean_records
+            log_print(f"data: {json.dumps(data_output, separators=(',', ':'))}")
+            
+            # ---------------------------------------------------------
+            # TRANSMIT ACKNOWLEDGEMENT
+            # ---------------------------------------------------------
+            time.sleep(0.05) # Simulate microcontroller processing delay
+            ack_json = {"t": "ACK", "s": packet_seq}
+            log_print(f"LoRa ACK out: {json.dumps(ack_json, separators=(',', ':'))}")
+            
+            # Clear the queue for this sensor after successful transmission
+            queues[target_sensor] = []
+            packet_seq += 1
+
+        # Real-time clock delay before the next mesh cycle
+        time.sleep(random.uniform(3.0, 4.0))
 
 except KeyboardInterrupt:
-    print("\n🛑 Simulation terminated by operator.")
+    print("\nSimulation terminated.")
