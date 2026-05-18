@@ -9,13 +9,11 @@
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// The receiver keeps only the latest delivered value for each sensor on the
-// OLED, but every LoRa BATCH may contain several historical records.
+// The receiver keeps only the latest delivered value for each sensor.
 const char *SENSOR_NAMES[] = {"DS18B20", "DHT11", "DHT22", "BME280"};
 const char *UI_SENSOR_NAMES[] = {"BME280", "DHT11", "DHT22", "DS18B20"};
 float temperatures[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 bool sensorOnline[4] = {false, false, false, false};
-uint32_t sensorTimes[4] = {0, 0, 0, 0};
 uint32_t sensorSequences[4] = {0, 0, 0, 0};
 bool uiConnectivity[7] = {false, false, false, false, false, false, false};
 
@@ -41,7 +39,7 @@ String formatTemperature(uint8_t index) {
 }
 
 int8_t sensorIndexByName(const char *name) {
-  // The gateway sends the sensor name inside each BATCH packet.
+  // The gateway sends the sensor name inside each TEMP packet.
   for (uint8_t i = 0; i < 4; i++) {
     if (strcmp(SENSOR_NAMES[i], name) == 0) {
       return i;
@@ -86,46 +84,29 @@ void printUiConnectivityArray() {
   Serial.print("]");
 }
 
-void printUiTemperatureRecords(JsonArray records, bool includeRecords) {
+void printUiTemperatureValue(float temperature, bool includeValue) {
   Serial.print("[");
 
-  if (includeRecords) {
-    bool firstRecord = true;
-    for (JsonVariant value : records) {
-      JsonArray row = value.as<JsonArray>();
-      if (row.size() < 3) {
-        continue;
-      }
-
-      if (!firstRecord) {
-        Serial.print(",");
-      }
-      firstRecord = false;
-
-      // LoRa records are [sensorSequence, gatewayTimeMs, temperatureC].
-      // The UI only needs [gatewayTimeMs, temperatureC].
-      uint32_t timeMs = row[1].as<uint32_t>();
-      float temperature = row[2].as<float>();
-      Serial.print("[");
-      Serial.print((unsigned long)timeMs);
-      Serial.print(",");
-      Serial.print(temperature, 1);
-      Serial.print("]");
-    }
+  if (includeValue) {
+    // The first value is a placeholder. UI/scrapper.py now uses PC arrival
+    // time, so the ESP32 no longer sends sensor-side timestamps.
+    Serial.print("[0,");
+    Serial.print(temperature, 1);
+    Serial.print("]");
   }
 
   Serial.print("]");
 }
 
-void printUiDataLine(const char *sensorName, JsonArray records, bool hasRecords) {
-  int8_t activeUiSensor = hasRecords ? uiSensorIndexByName(sensorName) : -1;
+void printUiDataLine(const char *sensorName, float temperature, bool hasValue) {
+  int8_t activeUiSensor = hasValue ? uiSensorIndexByName(sensorName) : -1;
 
   Serial.print("data: [");
   printUiConnectivityArray();
 
   for (uint8_t i = 0; i < 4; i++) {
     Serial.print(",");
-    printUiTemperatureRecords(records, activeUiSensor == i);
+    printUiTemperatureValue(temperature, activeUiSensor == i);
   }
 
   Serial.println("]");
@@ -133,9 +114,7 @@ void printUiDataLine(const char *sensorName, JsonArray records, bool hasRecords)
 
 void printUiDisconnectedDataLine() {
   clearUiConnectivity();
-  StaticJsonDocument<16> emptyDoc;
-  JsonArray emptyRecords = emptyDoc.to<JsonArray>();
-  printUiDataLine("", emptyRecords, false);
+  printUiDataLine("", 0.0f, false);
 }
 
 void printUiDisconnectedLineIfNeeded() {
@@ -147,7 +126,7 @@ void printUiDisconnectedLineIfNeeded() {
     return;
   }
 
-  // While no fresh LoRa batch is available, keep emitting a valid empty UI
+  // While no fresh LoRa value is available, keep emitting a valid empty UI
   // packet so the UI does not have to treat Serial silence as a special case.
   lastUiDisconnectedPrintMs = millis();
   printUiDisconnectedDataLine();
@@ -184,15 +163,14 @@ void updateDisplay() {
 
 void printTemperatureSummary() {
   // Serial output is intentionally more detailed than the OLED: it shows the
-  // sensor sequence and gateway-authority timestamp of the latest record.
+  // sensor sequence of the latest received live value.
   Serial.printf("Packet %lu received\n", (unsigned long)lastSequence);
 
   for (uint8_t i = 0; i < 4; i++) {
     Serial.printf("%u %s: ", i + 1, SENSOR_NAMES[i]);
     if (packetIsFresh() && sensorOnline[i]) {
-      Serial.printf("%.1f C at %lu ms (seq %lu)\n",
+      Serial.printf("%.1f C (seq %lu)\n",
                     temperatures[i],
-                    (unsigned long)sensorTimes[i],
                     (unsigned long)sensorSequences[i]);
     } else {
       Serial.println("disconnected");
@@ -245,8 +223,7 @@ void retryLoraIfNeeded() {
 }
 
 void sendAck(uint32_t sequence) {
-  // ACKing by LoRa sequence lets the gateway know it is safe to ACK the mesh
-  // source node, which then deletes that delivered history.
+  // ACKing by LoRa sequence lets the gateway know the receiver link is alive.
   if (!loraReady) {
     return;
   }
@@ -278,84 +255,35 @@ void handleTemperaturePacket(const String &packet) {
   }
 
   const char *type = doc["t"] | "";
-  if (strcmp(type, "BATCH") == 0) {
-    // New format: one sensor history batch with timestamped records:
-    // records = [[sensorSeq, gatewayTimeMs, temperatureC], ...]
+  if (strcmp(type, "TEMP") == 0) {
+    // Simplified format: one live value from one sensor. The PC assigns the
+    // chart timestamp when this line arrives over Serial.
     const char *sensorName = doc["name"] | "";
     int8_t sensorIndex = sensorIndexByName(sensorName);
     if (sensorIndex < 0) {
-      Serial.println("LoRa batch ignored: unknown sensor name");
+      Serial.println("LoRa TEMP ignored: unknown sensor name");
       return;
     }
 
-    JsonArray records = doc["records"].as<JsonArray>();
-    if (records.size() == 0) {
-      Serial.println("LoRa batch ignored: empty history");
-      return;
-    }
-
-    for (JsonVariant value : records) {
-      JsonArray row = value.as<JsonArray>();
-      if (row.size() < 3) {
-        continue;
-      }
-
-      // Each row overwrites the displayed value, so after the loop the OLED
-      // contains the newest record from this sensor's delivered history.
-      sensorSequences[sensorIndex] = row[0] | 0;
-      sensorTimes[sensorIndex] = row[1] | 0;
-      temperatures[sensorIndex] = row[2] | 0.0f;
-      sensorOnline[sensorIndex] = true;
-
-      Serial.printf("%s history seq %lu at %lu ms = %.1f C\n",
-                    sensorName,
-                    (unsigned long)sensorSequences[sensorIndex],
-                    (unsigned long)sensorTimes[sensorIndex],
-                    temperatures[sensorIndex]);
-    }
+    sensorSequences[sensorIndex] = doc["seq"] | 0;
+    temperatures[sensorIndex] = doc["temp"] | 0.0f;
+    sensorOnline[sensorIndex] = true;
 
     updateUiConnectivity(doc["conn"].as<JsonArray>());
     lastSequence = doc["s"] | 0;
     lastPacketMs = millis();
 
     Serial.println("LoRa in: " + packet);
+    Serial.printf("%s live seq %lu = %.1f C\n",
+                  sensorName,
+                  (unsigned long)sensorSequences[sensorIndex],
+                  temperatures[sensorIndex]);
     printTemperatureSummary();
-    printUiDataLine(sensorName, records, true);
+    printUiDataLine(sensorName, temperatures[sensorIndex], true);
     updateDisplay();
     sendAck(lastSequence);
     return;
   }
-
-  if (strcmp(type, "TEMP") != 0) {
-    return;
-  }
-
-  // Backward compatibility for the earlier fixed four-sensor packet format.
-  JsonArray values = doc["v"].as<JsonArray>();
-  JsonArray status = doc["ok"].as<JsonArray>();
-
-  if (values.size() < 4 || status.size() < 4) {
-    Serial.println("LoRa packet ignored: incomplete temperature bundle");
-    return;
-  }
-
-  lastSequence = doc["s"] | 0;
-
-  for (uint8_t i = 0; i < 4; i++) {
-    sensorOnline[i] = (status[i] | 0) == 1;
-    temperatures[i] = values[i] | 0.0f;
-  }
-
-  lastPacketMs = millis();
-
-  Serial.println("LoRa in: " + packet);
-  printTemperatureSummary();
-  updateUiConnectivity(doc["conn"].as<JsonArray>());
-  StaticJsonDocument<16> emptyDoc;
-  JsonArray emptyRecords = emptyDoc.to<JsonArray>();
-  printUiDataLine("", emptyRecords, false);
-  updateDisplay();
-  sendAck(lastSequence);
 }
 
 void receiveLoraPacket() {

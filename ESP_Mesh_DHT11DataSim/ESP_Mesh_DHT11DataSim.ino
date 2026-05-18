@@ -8,12 +8,11 @@
 #include "../libraries/MeshRouting/src/MeshRouting.cpp"
 
 // One MeshDebug instance owns the painlessMesh connection.
-// One MeshRouting instance owns history storage, gateway discovery, and ACKs.
+// One MeshRouting instance owns latest-value delivery and gateway discovery.
 MeshDebug meshDebug;
 MeshRouting meshRouting;
 
 unsigned long lastSendMs = 0;
-unsigned long lastTimeWaitLogMs = 0;
 float simulatedTemperature = 25.8;
 
 // DHT11 is still simulated. The random walk prevents every packet from having
@@ -27,29 +26,16 @@ void publishTemperature() {
   simulatedTemperature = nextTemperature(simulatedTemperature, 24.5f, 28.0f);
   simulatedTemperature = roundf(simulatedTemperature * 10.0f) / 10.0f;
 
-  // Readings are stored locally first. They are delivered later as batches
-  // after this node has discovered and can reach the LoRa gateway.
+  // Store only the newest value. Older unsent values are overwritten on the
+  // next cycle, so there is no history buffer or timestamp sync.
   meshRouting.addLocalReading(simulatedTemperature);
 
   Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
 }
 
-bool gatewayTimeReadyForTemperature() {
-  if (meshRouting.isTimeReadyForReadings()) {
-    return true;
-  }
-
-  if (millis() - lastTimeWaitLogMs >= SEND_INTERVAL_MS) {
-    lastTimeWaitLogMs = millis();
-    Serial.println("Temperature waiting: gateway time is not synchronized yet");
-  }
-
-  return false;
-}
-
 void handleMeshMessage(uint32_t from, const String &msg) {
-  // MeshRouting handles gateway beacons, connectivity reports, data batches,
-  // and batch ACK packets.
+  // MeshRouting handles gateway beacons, connectivity reports, data packets,
+  // and delivery ACK packets.
   meshRouting.handleMessage(from, msg);
 }
 
@@ -100,11 +86,6 @@ void loop() {
 
   if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
     lastSendMs = millis();
-
-    if (gatewayTimeReadyForTemperature()) {
-      // This creates one new simulated reading every interval. It may not be
-      // transmitted immediately; MeshRouting decides when upload is possible.
-      publishTemperature();
-    }
+    publishTemperature();
   }
 }

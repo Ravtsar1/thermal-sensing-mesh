@@ -1,13 +1,13 @@
 # Thermal Sensing Mesh
 
-Note: this `ui-feature` branch is under active development and may be unstable.
+Note: this `simplified` branch is under active development and may be unstable.
 
 Thermal Sensing Mesh is an ESP32 temperature sensing network that combines a
-WiFi mesh with a LoRa uplink. The mesh sensors keep timestamped temperature
-history locally, discover whether the LoRa gateway is reachable, and upload
-history batches only after a route exists.
+WiFi mesh with a LoRa uplink. The mesh sensors keep only their newest
+temperature value, discover whether the LoRa gateway is reachable, and send one
+live value per cycle instead of storing timestamped history.
 
-This `ui-feature` branch also prepares receiver Serial output for a separate
+This branch also prepares receiver Serial output for a separate
 user interface. The LoRa receiver keeps its existing debug prints, but it also
 prints one filterable line beginning with `data:` for both connected and
 disconnected UI states.
@@ -32,57 +32,29 @@ callbacks consistent, sends JSON packets, and lists direct and known mesh nodes.
 
 `MeshRouting` is the project protocol layer:
 
-1. Every sensor reading is saved first in local RAM history.
+1. Every sensor keeps only its latest temperature reading.
 2. Each node periodically broadcasts a lightweight `LINKS` packet with its
    connectivity data.
 3. The DS18B20 gateway broadcasts `GW` beacons so other nodes can learn the
    gateway node ID.
 4. The gateway learns the mesh connectivity graph from `LINKS` packets and the
    painlessMesh layout data inside those packets.
-5. When a sensor can reach the gateway, it creates a `DATA_BATCH` packet with
-   several history records.
-6. The packet includes original sensor ID, sensor name, batch ID,
-   gateway-authority timestamps, temperature values, and a logical path.
-7. painlessMesh handles the real multi-hop forwarding to the gateway.
-8. The gateway converts the mesh `DATA_BATCH` into a shorter LoRa `BATCH`.
-9. The LoRa `BATCH` includes the delivered temperature history and a seven-value
+5. When a sensor can reach the gateway, it creates a `DATA` packet containing
+   only source ID, sensor name, reading sequence, and temperature.
+6. painlessMesh handles the real multi-hop forwarding to the gateway.
+7. The gateway converts the mesh `DATA` packet into a LoRa `TEMP` packet.
+8. The LoRa `TEMP` packet includes one live temperature value and a seven-value
    connectivity array for the UI.
-10. The LoRa receiver displays the newest value per sensor, prints the `data:`
-    UI line, and sends a LoRa `ACK`.
-11. Only after the LoRa receiver ACKs does the gateway send a mesh `BATCH_ACK`
-    back to the source sensor.
-12. The source sensor deletes delivered history only after receiving
-    `BATCH_ACK`.
+9. The LoRa receiver displays the newest value per sensor, prints the `data:`
+   UI line, and sends a LoRa `ACK`.
+10. When the gateway receives a mesh `DATA` packet, it sends a mesh `DATA_ACK`
+    back to the source sensor as a gateway-path connectivity signal. The LoRa
+    `ACK` remains a separate gateway-to-receiver link signal. Neither ACK
+    deletes history because this branch has no history buffer.
 
-This keeps the mesh from flooding every temperature sample immediately. If a
-sensor is disconnected, it keeps storing readings and uploads the saved history
-when the gateway becomes reachable again.
-
-## Time Synchronization
-
-The DS18B20 gateway is the authority for project time. It broadcasts a small
-`GW` packet every 5 seconds with its current gateway time.
-
-DHT11, DHT22, and BME280 do not take temperature readings until they receive a
-`GW` packet. After receiving one, each node calculates this local offset:
-
-```text
-gatewayTimeOffset = gatewayTimeFromBeacon - localMillis
-```
-
-Then each sensor timestamps readings with:
-
-```text
-gatewayTime = localMillis + gatewayTimeOffset
-```
-
-If a sensor later disconnects after it has already synchronized once, it keeps
-recording with the last known gateway-time offset. When the gateway becomes
-reachable again, the next `GW` packet refreshes the offset.
-
-If a non-gateway sensor boots alone and never hears the gateway, it keeps
-waiting and does not create temperature history yet. This keeps all recorded
-temperature timestamps tied to the gateway's time base.
+If a sensor is disconnected, its newest local value may be overwritten by the
+next cycle before it is delivered. This is intentional: the simplified branch
+prioritizes live telemetry and clean UI timing over historical backfill.
 
 ## UI Serial Output
 
@@ -96,13 +68,13 @@ data:
 The line after `data:` is a JSON-style array:
 
 ```text
-data: [connectivity, BME280History, DHT11History, DHT22History, DS18B20History]
+data: [connectivity, BME280, DHT11, DHT22, DS18B20]
 ```
 
 Example:
 
 ```text
-data: [[1,0,1,0,1,0,1],[],[[185091,26.9],[187592,26.8]],[],[]]
+data: [[1,0,1,0,1,0,1],[],[[0,26.9]],[],[]]
 ```
 
 The first array contains seven boolean values represented as `1` or `0`:
@@ -117,25 +89,18 @@ The first array contains seven boolean values represented as `1` or `0`:
 | `5`   | DHT22 connected to DS18B20 gateway         |
 | `6`   | DS18B20 gateway connected to LoRa receiver |
 
-Each temperature history array contains rows in this format:
+Each temperature array contains at most one row in this format:
 
 ```text
-[gatewayTimeMs, temperatureC]
+[0, temperatureC]
 ```
 
-For example:
+The `0` is a placeholder. The UI scraper assigns the actual chart time from
+the PC time when the Serial line arrives. The receiver prints one `data:` line
+for each LoRa `TEMP` packet it receives, so the matching sensor array is filled
+and the other sensor arrays are usually empty.
 
-```text
-[[185091,26.9],[187592,26.8]]
-```
-
-The receiver prints one `data:` line for each LoRa `BATCH` it receives. Because
-each batch belongs to one source sensor, the matching sensor history array is
-filled and the other sensor arrays are usually empty. If a sensor was
-disconnected for a while, its next delivered batch may contain several history
-rows.
-
-If the receiver has no fresh LoRa batch, it periodically prints this disconnected
+If the receiver has no fresh LoRa value, it periodically prints this disconnected
 UI state:
 
 ```text
@@ -148,7 +113,7 @@ begin with `data:`.
 
 ## Timing Intervals
 
-### Temperature And Time
+### Temperature
 
 | Behavior | Default interval |
 | --- | --- |
@@ -156,7 +121,6 @@ begin with `data:`.
 | DHT22 simulated temperature reading | `2500 ms` |
 | BME280 simulated temperature reading | `2500 ms` |
 | DS18B20 real temperature reading | `2500 ms` |
-| Gateway time beacon used for sensor synchronization | `1000 ms` |
 
 ### Mesh Routing
 
@@ -167,11 +131,14 @@ begin with `data:`.
 | Learned link freshness timeout | `3500 ms` |
 | DS18B20 gateway `GW` beacon | `1000 ms` |
 | Learned gateway freshness timeout | `6000 ms` |
-| Mesh history send retry | `5000 ms` |
-| Mesh `BATCH_ACK` timeout | `12000 ms` |
+| Latest value send retry after failed route | `1000 ms` |
+| Station reconnect nudge while gateway route is missing | `3000 ms` |
 
 Connectivity reports are also triggered after painlessMesh reports a topology
 change, so a node may publish `LINKS` earlier than the normal 1 second period.
+The DS18B20 gateway is also marked as the painlessMesh root. If a sensor knows
+the gateway ID but loses the route after a relay is turned off, it asks its WiFi
+station side to reconnect so painlessMesh can search for a new path sooner.
 
 ### Gateway And LoRa Receiver
 
@@ -221,7 +188,7 @@ This project also includes two shared local code folders:
 - `MeshRouting`, located at `libraries/MeshRouting`
 
 `MeshDebug` contains the painlessMesh wrapper. `MeshRouting` contains the
-connectivity, history, batch, ACK, and UI-connectivity protocol.
+connectivity, live-value delivery, ACK, and UI-connectivity protocol.
 
 ## Arduino IDE Setup
 
@@ -295,7 +262,7 @@ mesh nodes, connection changes, and painlessMesh internal time adjustments.
 
 When disabled, those `MeshDebug` messages are hidden. It does not stop the
 program, disable the mesh, change routing behavior, or turn off every Serial
-message. Sensor readings, routing/history logs, gateway logs, LoRa logs,
+message. Sensor readings, routing logs, gateway logs, LoRa logs,
 receiver logs, and UI `data:` lines may still print because they are produced
 outside `MeshDebug`.
 
@@ -324,7 +291,7 @@ Thermal Sensing Mesh/
   ESP_Mesh_DS18B20_Lora/      DS18B20 mesh gateway and LoRa transmitter
   ESP_LoraReceiver/           LoRa receiver, OLED display, and UI Serial output
   libraries/MeshDebug/        Shared mesh debug/transport code
-  libraries/MeshRouting/      Shared mesh routing/history code
+  libraries/MeshRouting/      Shared mesh routing/live-value code
 ```
 
 ## GitHub Compile Check
@@ -337,9 +304,10 @@ change firmware behavior.
 
 - DHT11, DHT22, and BME280 are simulated in the main mesh sketches.
 - DS18B20 is the only real temperature sensor in the current gateway sketch.
-- History is stored in RAM, so it is lost if a node resets.
-- The receiver `data:` line represents the LoRa batch that just arrived. It is
-  not a database of every past batch from every sensor.
+- Sensor nodes keep only the newest temperature value, so disconnected readings
+  are overwritten instead of backfilled later.
+- The receiver `data:` line represents the LoRa value that just arrived. It is
+  not a database of every past reading from every sensor.
 - The mesh sketches depend on the repository folder structure because
   `MeshDebug` and `MeshRouting` are included by relative path.
 

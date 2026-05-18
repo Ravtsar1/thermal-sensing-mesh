@@ -34,7 +34,6 @@ bool loraReady = false;
 unsigned long lastSensorReadMs = 0;
 unsigned long lastLoraAckMs = 0;
 unsigned long lastLoraRetryMs = 0;
-unsigned long lastTimeWaitLogMs = 0;
 uint32_t loraSequence = 0;
 
 float roundOne(float value) {
@@ -48,7 +47,7 @@ bool isLoraReceiverFresh() {
 
 bool isDeliveredSensorFresh(const char *name) {
   // These LEDs show recent mesh contact with each sensor. A contact can be a
-  // LINKS packet or a DATA_BATCH packet from that sensor.
+  // LINKS packet or a DATA packet from that sensor.
   for (uint8_t i = 0; i < sizeof(deliveredSensors) / sizeof(deliveredSensors[0]); i++) {
     if (strcmp(deliveredSensors[i].name, name) == 0) {
       return deliveredSensors[i].lastDeliveredMs > 0 &&
@@ -163,38 +162,36 @@ bool waitForLoraAck(uint32_t expectedSequence) {
   return false;
 }
 
-bool sendBatchOverLora(const String &meshPacket) {
-  // Called by MeshRouting only on the gateway node. It converts a mesh
-  // DATA_BATCH into a smaller LoRa BATCH packet and waits for receiver ACK.
+bool sendDataOverLora(const String &meshPacket) {
+  // Called by MeshRouting only on the gateway node. It converts one mesh DATA
+  // packet into one LoRa TEMP packet and waits briefly for receiver ACK.
   if (!loraReady) {
     return false;
   }
 
-  StaticJsonDocument<1536> sourceDoc;
+  StaticJsonDocument<384> sourceDoc;
   DeserializationError error = deserializeJson(sourceDoc, meshPacket);
   if (error) {
-    Serial.println("Gateway packet ignored: invalid DATA_BATCH JSON");
+    Serial.println("Gateway packet ignored: invalid DATA JSON");
     return false;
   }
 
   const char *type = sourceDoc["t"] | "";
-  if (strcmp(type, "DATA_BATCH") != 0) {
+  if (strcmp(type, "DATA") != 0) {
     return false;
   }
 
   uint32_t sequence = ++loraSequence;
   const char *sensorName = sourceDoc["name"] | "unknown";
 
-  StaticJsonDocument<1536> loraDoc;
+  StaticJsonDocument<512> loraDoc;
   // Keep LoRa packet fields short because LoRa airtime is expensive.
-  loraDoc["t"] = "BATCH";
+  loraDoc["t"] = "TEMP";
   loraDoc["s"] = sequence;
   loraDoc["src"] = sourceDoc["src"].as<uint32_t>();
   loraDoc["name"] = sensorName;
-  loraDoc["batch"] = sourceDoc["batch"].as<uint32_t>();
-  loraDoc["fromSeq"] = sourceDoc["fromSeq"].as<uint32_t>();
-  loraDoc["toSeq"] = sourceDoc["toSeq"].as<uint32_t>();
-  loraDoc["sentAt"] = millis();
+  loraDoc["seq"] = sourceDoc["seq"].as<uint32_t>();
+  loraDoc["temp"] = sourceDoc["temp"].as<float>();
 
   // UI connectivity order:
   // [BME280-DHT11, BME280-DHT22, BME280-DS18B20,
@@ -207,8 +204,6 @@ bool sendBatchOverLora(const String &meshPacket) {
     connectivity.add(meshConnectivity[i] ? 1 : 0);
   }
   connectivity.add(isLoraReceiverFresh() ? 1 : 0);
-
-  loraDoc["records"].set(sourceDoc["records"]);
 
   String packet;
   serializeJson(loraDoc, packet);
@@ -242,34 +237,21 @@ void readDs18b20() {
 
   temperature = roundOne(temperature);
 
-  // Even gateway-local DS18B20 readings go through the same history pipeline.
-  // That way DS18B20 data is also retried if the LoRa station is unreachable.
+  // Gateway-local DS18B20 readings use the same latest-value pipeline as the
+  // remote simulated sensors.
   meshRouting.addLocalReading(temperature);
   Serial.printf("DS18B20 local temperature saved: %.1f C\n", temperature);
 }
 
-bool gatewayTimeReadyForTemperature() {
-  if (meshRouting.isTimeReadyForReadings()) {
-    return true;
-  }
-
-  if (millis() - lastTimeWaitLogMs >= SENSOR_INTERVAL_MS) {
-    lastTimeWaitLogMs = millis();
-    Serial.println("DS18B20 waiting: gateway time is not synchronized yet");
-  }
-
-  return false;
-}
-
 void handleMeshMessage(uint32_t from, const String &msg) {
-  // Receives DATA_BATCH packets from other mesh nodes and gateway/link beacons.
+  // Receives DATA packets from other mesh nodes and gateway/link beacons.
   StaticJsonDocument<384> doc;
   DeserializationError error = deserializeJson(doc, msg);
   if (!error) {
     const char *type = doc["t"] | "";
     const char *name = doc["name"] | "";
 
-    if ((strcmp(type, "LINKS") == 0 || strcmp(type, "DATA_BATCH") == 0) &&
+    if ((strcmp(type, "LINKS") == 0 || strcmp(type, "DATA") == 0) &&
         name[0] != '\0') {
       markSensorDelivered(name);
       Serial.printf("Mesh contact from %s via node %lu\n", name, (unsigned long)from);
@@ -315,6 +297,9 @@ void setup() {
   ds18b20.begin();
 
   meshDebug.setDebug(false);
+  // The gateway is the painlessMesh root, so other nodes restructure toward it
+  // faster after a relay node disappears.
+  meshDebug.setRootMode(true);
   meshDebug.onMessage(handleMeshMessage);
   meshDebug.onConnectionsChanged(handleMeshConnectionsChanged);
   meshDebug.begin(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
@@ -322,7 +307,7 @@ void setup() {
   // true marks this node as the mesh's LoRa gateway. It will broadcast GW
   // beacons so the simulated sensor nodes can discover its node ID.
   meshRouting.begin(&meshDebug, NODE_NAME, true);
-  meshRouting.setGatewaySender(sendBatchOverLora);
+  meshRouting.setGatewaySender(sendDataOverLora);
 
   initLora();
 
@@ -330,7 +315,7 @@ void setup() {
 }
 
 void loop() {
-  // Keep mesh update first so routing and time sync stay responsive.
+  // Keep mesh update first so routing and callbacks stay responsive.
   meshDebug.update();
   meshRouting.update();
   handleSerialDebugToggle();
@@ -340,11 +325,9 @@ void loop() {
   if (millis() - lastSensorReadMs >= SENSOR_INTERVAL_MS) {
     lastSensorReadMs = millis();
 
-    if (gatewayTimeReadyForTemperature()) {
-      // Save the gateway's own DS18B20 reading into the same reliable history
-      // pipeline used by the remote nodes.
-      readDs18b20();
-    }
+    // Save the gateway's own DS18B20 reading into the same latest-value
+    // pipeline used by the remote nodes.
+    readDs18b20();
   }
 
   updateLeds();

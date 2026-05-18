@@ -4,16 +4,13 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-typedef bool (*GatewayBatchSender)(const String &packet);
+typedef bool (*GatewayDataSender)(const String &packet);
 
-// Distributed routing and history buffer.
+// Distributed routing for live temperature values.
 //
-// Every mesh node runs this same class:
-// - normal sensor nodes store timestamped readings,
-// - the gateway node broadcasts "GW" beacons,
-// - all nodes learn light connectivity information,
-// - sensor nodes send history batches to the gateway when it is reachable,
-// - readings are deleted only after a BATCH_ACK returns.
+// Every mesh node keeps only its newest temperature reading. Normal sensor
+// nodes send that latest value to the DS18B20 gateway when painlessMesh knows
+// a route. The gateway forwards one value at a time to the LoRa receiver.
 class MeshRouting {
 public:
   MeshRouting();
@@ -21,8 +18,8 @@ public:
   // gatewayNode = true only on the DS18B20 + LoRa sketch.
   void begin(MeshDebug *mesh, const char *nodeName, bool gatewayNode);
 
-  // Call often from loop(); handles beacons, connectivity reports, retries,
-  // and delayed history upload.
+  // Call often from loop(); handles beacons, connectivity reports, and latest
+  // value forwarding.
   void update();
 
   // Feed every incoming mesh JSON packet here from MeshDebug::onMessage().
@@ -31,15 +28,15 @@ public:
   // Called when painlessMesh says the connection layout changed.
   void markLinksDirty();
 
-  // Non-gateway sensors must hear a gateway time beacon before recording
-  // temperature. The gateway is always ready because it is the authority.
+  // Kept so existing sketches compile. The simplified branch does not require
+  // time synchronization before taking readings.
   bool isTimeReadyForReadings();
 
-  // Save a new local sensor reading with gateway-authority time.
+  // Store the newest local reading. Any older unsent reading is overwritten.
   void addLocalReading(float temperature);
 
-  // Only the gateway sketch sets this; it forwards DATA_BATCH packets to LoRa.
-  void setGatewaySender(GatewayBatchSender sender);
+  // Only the gateway sketch sets this; it forwards DATA packets to LoRa.
+  void setGatewaySender(GatewayDataSender sender);
 
   // Fill the six mesh-link booleans used by the UI branch:
   // [BME280-DHT11, BME280-DHT22, BME280-DS18B20,
@@ -49,23 +46,16 @@ public:
   void getProjectConnectivity(bool connectivity[6]);
 
 private:
-  // These limits are deliberately small because the project has five ESP32s.
-  // Increasing them is safe, but each increase uses more RAM on every node.
   static const uint8_t MAX_GRAPH_NODES = 10;
   static const uint8_t MAX_NEIGHBORS = 8;
-  static const uint8_t MAX_PATH_NODES = 10;
-  static const uint8_t MAX_HISTORY_RECORDS = 240;
-  static const uint8_t BATCH_RECORD_LIMIT = 4;
   static const unsigned long LINK_REPORT_INTERVAL_MS = 1000;
   static const unsigned long LINK_REPORT_JITTER_MS = 150;
   static const unsigned long LINK_TTL_MS = 3500;
   static const unsigned long GATEWAY_BEACON_INTERVAL_MS = 1000;
   static const unsigned long GATEWAY_TTL_MS = 6000;
-  static const unsigned long ACK_TIMEOUT_MS = 12000;
-  static const unsigned long SEND_RETRY_MS = 5000;
   static const unsigned long SEND_FAIL_RETRY_MS = 1000;
+  static const unsigned long ROUTE_RECONNECT_INTERVAL_MS = 3000;
 
-  // One row in the local connectivity matrix / adjacency list.
   struct GraphNode {
     uint32_t id;
     char name[18];
@@ -76,44 +66,32 @@ private:
     bool used;
   };
 
-  // A timestamped reading waiting to be delivered to the gateway.
-  struct ReadingRecord {
+  struct LatestReading {
     uint32_t sequence;
-    uint32_t timeMs;
     float temperature;
+    bool available;
   };
 
   MeshDebug *meshDebug;
   const char *localName;
   bool isGateway;
-  GatewayBatchSender gatewaySender;
+  GatewayDataSender gatewaySender;
 
   GraphNode graph[MAX_GRAPH_NODES];
-  ReadingRecord history[MAX_HISTORY_RECORDS];
-  uint8_t historyCount;
+  LatestReading latestReading;
   uint32_t nextReadingSequence;
-  uint32_t nextBatchId;
-  uint32_t lastReadingTimeMs;
-
-  bool waitingForAck;
-  uint32_t pendingBatchId;
-  uint32_t pendingToSequence;
-  unsigned long pendingSentMs;
+  uint32_t lastSentSequence;
   unsigned long lastLinkReportMs;
   unsigned long lastGatewayBeaconMs;
-  unsigned long lastHistorySendMs;
+  unsigned long lastDataSendMs;
   unsigned long lastGatewaySeenMs;
   unsigned long lastGatewayWaitLogMs;
+  unsigned long lastRouteReconnectMs;
   uint32_t gatewayNodeId;
-  int64_t gatewayTimeOffsetMs;
-  bool gatewayTimeReady;
   bool linksDirty;
 
-  // Connectivity/gateway discovery.
   void publishLinks();
   void publishGatewayBeacon();
-  uint32_t authorityTimeMs();
-  uint32_t monotonicReadingTimeMs();
   void updateSelfLinks();
   void updateGraphNode(uint32_t nodeId, const char *name, bool gateway, JsonArray neighbors);
   int findGraphIndex(uint32_t nodeId);
@@ -127,31 +105,16 @@ private:
   void learnLayoutJson(const char *layout);
   void learnLayoutNode(JsonObject node);
   uint32_t findGatewayId();
-
-  // Optional graph path calculation. Current delivery uses painlessMesh's
-  // internal routing to the gateway ID, but BFS is kept for topology debugging
-  // and future explicit app-level paths.
-  bool findPathToGateway(uint32_t *path, uint8_t &pathLength);
-  uint8_t collectBfsNeighbors(uint32_t nodeId, uint32_t *neighbors, uint8_t maxNeighbors);
   bool neighborAlreadyListed(uint32_t *neighbors, uint8_t count, uint32_t nodeId);
 
-  // Local history upload and deletion after ACK.
-  void trySendHistory();
-  bool buildHistoryPacket(uint32_t *path, uint8_t pathLength, String &packet, uint32_t &batchId, uint32_t &toSequence);
-  bool sendGatewayLocalHistory();
-  void dropHistoryThrough(uint32_t sequence);
+  void trySendLatestReading();
+  bool buildDataPacket(String &packet);
 
-  // Packet handlers.
   void handleGatewayBeacon(JsonDocument &doc);
   void handleLinks(JsonDocument &doc);
+  void handleData(JsonDocument &doc);
+  void handleDataAck(JsonDocument &doc);
+  void sendDataAck(JsonDocument &dataDoc);
   bool nameLooksLikeGateway(const char *name);
   void rememberGateway(uint32_t nodeId, const char *reason);
-  void handleDataBatch(JsonDocument &doc);
-  void handleBatchAck(JsonDocument &doc);
-  void forwardDataBatch(JsonDocument &doc, uint8_t currentHop);
-  void sendBatchAck(JsonDocument &dataDoc);
-  void forwardBatchAck(JsonDocument &doc, uint8_t currentHop);
-
-  uint8_t readPath(JsonDocument &doc, uint32_t *path);
-  void copyPath(JsonArray target, uint32_t *path, uint8_t pathLength);
 };

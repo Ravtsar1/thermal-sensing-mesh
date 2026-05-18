@@ -17,7 +17,7 @@ This system supports both:
 | ------------------ | ------------------------------------------------------------------------------------------- |
 | `main.py`          | Unified system process manager that launches both the scrapper and dashboard simultaneously |
 | `app.py`           | Main Streamlit dashboard UI powered by Plotly                                               |
-| `scrapper.py`      | Handles telemetry parsing, synchronization, and CSV pipeline generation                     |
+| `scrapper.py`      | Handles telemetry parsing and CSV pipeline generation                                      |
 | `simulator.py`     | Generates randomized sensor and connectivity data for testing                               |
 | `requirements.txt` | Python dependencies required by the project                                                 |
 
@@ -238,7 +238,7 @@ Index 6 : DS18B20 <--> RECEIVER
 * Serial telemetry ingestion
 * Simulation environment for testing
 * Automatic CSV pipeline generation
-* Time synchronization interpolation
+* PC-arrival-time timestamping for simplified live telemetry
 * Dynamic network topology visualization
 * Lightweight rolling-window storage
 * Daily archival rotation

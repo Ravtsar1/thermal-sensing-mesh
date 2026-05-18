@@ -8,12 +8,11 @@
 #include "../libraries/MeshRouting/src/MeshRouting.cpp"
 
 // MeshDebug handles the WiFi mesh transport. MeshRouting handles the project
-// protocol: local history, gateway discovery, batching, and ACK deletion.
+// protocol: latest-value delivery, gateway discovery, and delivery ACKs.
 MeshDebug meshDebug;
 MeshRouting meshRouting;
 
 unsigned long lastSendMs = 0;
-unsigned long lastTimeWaitLogMs = 0;
 float simulatedTemperature = 25.1;
 
 // DHT22 is simulated with a gentle random walk. Replace this function with a
@@ -27,24 +26,11 @@ void publishTemperature() {
   simulatedTemperature = nextTemperature(simulatedTemperature, 23.8f, 27.2f);
   simulatedTemperature = roundf(simulatedTemperature * 10.0f) / 10.0f;
 
-  // Store locally first; MeshRouting decides when a gateway route exists and
-  // sends compact batches instead of flooding every single reading.
+  // Store only the newest value. Older unsent values are overwritten on the
+  // next cycle, so there is no history buffer or timestamp sync.
   meshRouting.addLocalReading(simulatedTemperature);
 
   Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
-}
-
-bool gatewayTimeReadyForTemperature() {
-  if (meshRouting.isTimeReadyForReadings()) {
-    return true;
-  }
-
-  if (millis() - lastTimeWaitLogMs >= SEND_INTERVAL_MS) {
-    lastTimeWaitLogMs = millis();
-    Serial.println("Temperature waiting: gateway time is not synchronized yet");
-  }
-
-  return false;
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {
@@ -92,18 +78,13 @@ void setup() {
 }
 
 void loop() {
-  // Keeps mesh routing, sync, and callbacks alive.
+  // Keeps mesh routing and callbacks alive.
   meshDebug.update();
   meshRouting.update();
   handleSerialDebugToggle();
 
   if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
     lastSendMs = millis();
-
-    if (gatewayTimeReadyForTemperature()) {
-      // Add one reading to RAM history. It will be uploaded later if the
-      // gateway is reachable through painlessMesh.
-      publishTemperature();
-    }
+    publishTemperature();
   }
 }

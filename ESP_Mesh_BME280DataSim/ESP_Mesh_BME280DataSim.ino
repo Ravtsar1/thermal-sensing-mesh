@@ -7,13 +7,12 @@
 #include "../libraries/MeshDebug/src/MeshDebug.cpp"
 #include "../libraries/MeshRouting/src/MeshRouting.cpp"
 
-// MeshDebug is the transport wrapper. MeshRouting is the store-and-forward
-// layer that buffers readings and uploads them when a gateway exists.
+// MeshDebug is the transport wrapper. MeshRouting forwards the latest reading
+// whenever this node has a route to the gateway.
 MeshDebug meshDebug;
 MeshRouting meshRouting;
 
 unsigned long lastSendMs = 0;
-unsigned long lastTimeWaitLogMs = 0;
 float simulatedTemperature = 25.4;
 
 // BME280 is still simulated for now. This small random walk gives a realistic
@@ -27,28 +26,15 @@ void publishTemperature() {
   simulatedTemperature = nextTemperature(simulatedTemperature, 24.0f, 27.0f);
   simulatedTemperature = roundf(simulatedTemperature * 10.0f) / 10.0f;
 
-  // Do not broadcast temperature directly. Store it first; MeshRouting will
-  // send batched history only when the LoRa gateway is reachable.
+  // Store only the newest value. Older unsent values are overwritten on the
+  // next cycle, so there is no history buffer or timestamp sync.
   meshRouting.addLocalReading(simulatedTemperature);
 
   Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
 }
 
-bool gatewayTimeReadyForTemperature() {
-  if (meshRouting.isTimeReadyForReadings()) {
-    return true;
-  }
-
-  if (millis() - lastTimeWaitLogMs >= SEND_INTERVAL_MS) {
-    lastTimeWaitLogMs = millis();
-    Serial.println("Temperature waiting: gateway time is not synchronized yet");
-  }
-
-  return false;
-}
-
 void handleMeshMessage(uint32_t from, const String &msg) {
-  // All mesh protocol packets (gateway beacons, links, batches, ACKs) are
+  // All mesh protocol packets (gateway beacons, links, data, ACKs) are
   // decoded by MeshRouting so the sketch can stay sensor-focused.
   meshRouting.handleMessage(from, msg);
 }
@@ -100,11 +86,6 @@ void loop() {
 
   if (millis() - lastSendMs >= SEND_INTERVAL_MS) {
     lastSendMs = millis();
-
-    if (gatewayTimeReadyForTemperature()) {
-      // Store a simulated BME280 reading. This does not flood the mesh; it
-      // waits in history until MeshRouting sends a batch.
-      publishTemperature();
-    }
+    publishTemperature();
   }
 }

@@ -4,6 +4,7 @@
 MeshDebug::MeshDebug()
     : debugEnabled(true),
       gatewayMode(false),
+      rootMode(false),
       currentType("generic_sensor"),
       rawMessageCallback(nullptr),
       changedCallback(nullptr) {}
@@ -17,6 +18,10 @@ void MeshDebug::setGatewayMode(bool enable) {
   if (enable) {
     debugEnabled = false;
   }
+}
+
+void MeshDebug::setRootMode(bool enable) {
+  rootMode = enable;
 }
 
 void MeshDebug::onMessage(MeshRawMessageCallback callback) {
@@ -46,9 +51,17 @@ void MeshDebug::addData(const String &key, const String &value) {
 void MeshDebug::begin(const String &prefix, const String &password, uint16_t port) {
   // painlessMesh keeps its own scheduler. update() must be called often in
   // loop() so connection maintenance, time sync, and message delivery run.
+  // This project has one natural root: the DS18B20 + LoRa gateway. Telling
+  // painlessMesh that a root should exist makes nodes restructure toward that
+  // gateway faster after an intermediate relay disappears.
+  mesh.setContainsRoot(true);
+  mesh.setRoot(rootMode);
   mesh.init(prefix, password, &userScheduler, port);
+  mesh.setContainsRoot(true);
+  mesh.setRoot(rootMode);
   mesh.onReceive([this](uint32_t from, String &msg) { receivedCallback(from, msg); });
   mesh.onNewConnection([this](uint32_t nodeId) { newConnectionCallback(nodeId); });
+  mesh.onDroppedConnection([this](uint32_t nodeId) { droppedConnectionCallback(nodeId); });
   mesh.onChangedConnections([this]() { changedConnectionCallback(); });
   mesh.onNodeTimeAdjusted([this](int32_t offset) { nodeTimeAdjustedCallback(offset); });
 
@@ -79,9 +92,19 @@ bool MeshDebug::broadcastJson(const String &json, bool includeSelf) {
   return sent;
 }
 
+bool MeshDebug::requestStationReconnect() {
+  // Forces this node to drop its current upstream STA connection. painlessMesh
+  // keeps the AP side alive and scans again, which helps a node leave a stale
+  // or rootless path after its relay disappears.
+  bool requested = mesh.reconnectStation();
+  if (debugEnabled && requested) {
+    Serial.println("Mesh station reconnect requested");
+  }
+  return requested;
+}
+
 uint32_t MeshDebug::getMeshTime() {
-  // painlessMesh keeps node time synchronized across the mesh. Sensor readings
-  // store this value (converted to ms) instead of local unsynchronized millis().
+  // Exposes painlessMesh's internal time for diagnostics or older sketches.
   return mesh.getNodeTime();
 }
 
@@ -192,8 +215,8 @@ void MeshDebug::receivedCallback(uint32_t from, String &msg) {
   }
 
   // New routing packets use "t" instead of the old "type"/"data" shape.
-  // Print them directly so the Serial Monitor shows GW, LINKS, DATA_BATCH,
-  // and BATCH_ACK instead of misleading "unknown/null".
+  // Print them directly so the Serial Monitor shows GW, LINKS, DATA, and
+  // DATA_ACK instead of misleading "unknown/null".
   const char *newType = doc["t"] | "";
   if (newType[0] != '\0') {
     Serial.printf("Mesh in <- from: %lu | t: %s | json: %s\n",
@@ -221,6 +244,18 @@ void MeshDebug::newConnectionCallback(uint32_t nodeId) {
 
   if (debugEnabled) {
     Serial.printf("Mesh new node: %lu\n", (unsigned long)nodeId);
+  }
+}
+
+void MeshDebug::droppedConnectionCallback(uint32_t nodeId) {
+  // A dropped relay is exactly when the routing layer should publish a new
+  // topology view and retry any newest reading that has not reached gateway.
+  if (changedCallback != nullptr) {
+    changedCallback();
+  }
+
+  if (debugEnabled) {
+    Serial.printf("Mesh dropped node: %lu\n", (unsigned long)nodeId);
   }
 }
 

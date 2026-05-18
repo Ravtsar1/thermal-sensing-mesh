@@ -2,7 +2,7 @@ import json
 import time
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 import argparse
 from pathlib import Path
 
@@ -205,26 +205,19 @@ def main():
                         manage_live_data("connectivity.csv", "time,connectivity", csv_row)
                         save_to_archive("connectivity.csv", "time,connectivity", csv_row)
 
-                    # 4. Process Sensor Data Arrays (Index 1 to 4) with Time-Sync Interpolation
+                    # 4. Process Sensor Data Arrays (Index 1 to 4).
+                    # Simplified firmware sends live values without sensor-side
+                    # timestamps, so the PC arrival time is the chart time.
                     for index, sensor_name in SENSOR_MAP.items():
                         sensor_records = payload[index]
                         
                         if isinstance(sensor_records, list) and len(sensor_records) > 0:
-                            # Tentukan waktu mesh paling akhir sebagai "Jangkar" (Anchor)
-                            latest_mesh_time = sensor_records[-1][0]
-                            
                             for record in sensor_records:
-                                record_mesh_time = record[0]
-                                temp_val = record[1]
-                                
-                                # Hitung selisih waktu (dalam milidetik) antara data ini dengan data terbaru
-                                delta_ms = latest_mesh_time - record_mesh_time
-                                
-                                # Kurangi waktu PC saat ini dengan selisih tersebut untuk mendapat waktu asli
-                                actual_record_time = pc_datetime - timedelta(milliseconds=delta_ms)
-                                
-                                # Format kembali menjadi HH:MM:SS untuk disimpan ke CSV
-                                final_time_str = actual_record_time.strftime("%H:%M:%S")
+                                if not isinstance(record, list) or len(record) < 2:
+                                    continue
+
+                                temp_val = float(record[-1])
+                                final_time_str = base_log_time
                                 
                                 csv_row = f"{final_time_str},{temp_val:.2f}"
                                 filename = f"{sensor_name}.csv"
