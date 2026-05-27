@@ -12,13 +12,8 @@ static const uint16_t MESH_PORT = 5555;
 static const char *NODE_NAME = "DHT22";
 static const unsigned long SEND_INTERVAL_MS = 2500UL;
 
-// Simulated battery starts here and slowly decreases on each reading.
-static const float SIM_BATTERY_START_PERCENT = 86.0f;
-static const float SIM_BATTERY_DRAIN_MIN_PERCENT = 0.0f;
-static const float SIM_BATTERY_DRAIN_MAX_PERCENT = 0.2f;
-
-// Adaptive sleep matches the real DHT22 behavior, but the fastest sleep is
-// 10 seconds instead of the older reference sketch's 5 seconds.
+// After each successful reading, keep the ESP32 awake long enough for mesh
+// routing, then deep-sleep for an adaptive duration.
 static const unsigned long AWAKE_AFTER_READING_MS = 5000UL;
 static const uint8_t TEMPERATURE_HISTORY_SIZE = 3;
 static const float TEMPERATURE_STABLE_DELTA_C = 0.3f;
@@ -26,3 +21,15 @@ static const float TEMPERATURE_MODERATE_DELTA_C = 1.0f;
 static const unsigned long SLEEP_FAST_MS = 10000UL;
 static const unsigned long SLEEP_MODERATE_MS = 30000UL;
 static const unsigned long SLEEP_STABLE_MS = 120000UL;
+
+// Keep this pin aligned with the existing real DHT22 circuit.
+static const int DHT_PIN = 4;
+
+// Battery estimate copied from the DHT22 reference sketch.
+static const int BATTERY_ADC_PIN = 35;
+static const float BATTERY_ADC_REFERENCE_V = 3.3f;
+static const float BATTERY_ADC_MAX = 4095.0f;
+static const float BATTERY_DIVIDER_MULTIPLIER = 2.0f;
+static const float BATTERY_VOLTAGE_OFFSET = 0.4f;
+static const float BATTERY_EMPTY_V = 3.0f;
+static const float BATTERY_FULL_V = 4.2f;

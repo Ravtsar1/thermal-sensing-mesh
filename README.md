@@ -1,6 +1,6 @@
 # Thermal Sensing Mesh
 
-This is the simulated-temperature branch of Thermal Sensing Mesh.
+This is the real-temperature branch of Thermal Sensing Mesh.
 
 Thermal Sensing Mesh is an ESP32 monitoring network for distributed temperature
 nodes. Several ESP32 boards form a WiFi mesh so nearby nodes can pass data
@@ -8,12 +8,9 @@ through each other, and one DS18B20 gateway forwards the newest readings to a
 separate LoRa receiver. The receiver prints a filterable `data:` line for the
 Python UI dashboard.
 
-This `main` branch is intended for testing the full network without wiring real
-BME280, DHT11, or DHT22 sensors. Those three nodes simulate their readings while
-using the same mesh routing and UI data format as the real-temperature branch.
-
-For real measured BME280, DHT11, and DHT22 firmware, use the
-`real-temperature` branch.
+This `real-temperature` branch is intended for the real BME280, DHT11, and
+DHT22 sensor sketches. For simulated BME280, DHT11, and DHT22 firmware, use the
+`main` branch.
 
 ## Firmware Roles
 
@@ -21,21 +18,37 @@ Upload one firmware role to each ESP32:
 
 | Folder | Role | Data produced |
 | --- | --- | --- |
-| `ESP_Mesh_BME280DataSim` | Simulated BME280 mesh node | Simulated temperature and Kalman-filtered temperature |
-| `ESP_Mesh_DHT11DataSim` | Simulated DHT11 mesh node | Simulated temperature and fuzzy status |
-| `ESP_Mesh_DHT22DataSim` | Simulated DHT22 mesh node | Simulated temperature and battery percentage |
+| `ESP_Mesh_BME280` | Real BME280 mesh node | Measured temperature and Kalman-filtered temperature |
+| `ESP_Mesh_DHT11` | Real DHT11 mesh node | Measured temperature and fuzzy status |
+| `ESP_Mesh_DHT22` | Real DHT22 mesh node | Measured temperature and battery percentage |
 | `ESP_Mesh_DS18B20_Lora` | DS18B20 mesh gateway and LoRa transmitter | Real DS18B20 temperature, forwarded mesh data, connectivity |
 | `ESP_LoraReceiver` | LoRa receiver, OLED display, and PC serial bridge | UI serial output and receiver ACKs |
 
-The DS18B20 gateway still reads a real DS18B20 sensor because it also owns the
-LoRa transmitter role in this hardware setup.
+The real BME280 and DHT22 sketches use only their local sensor circuits plus the
+ESP32 mesh radio. They do not use the old nRF transmitter/receiver reference
+flow.
+
+## Real Sensor Features
+
+`ESP_Mesh_BME280` reads BME280 temperature over I2C, calculates a local Kalman
+filtered temperature value, and sends both values through the mesh.
+
+`ESP_Mesh_DHT11` reads DHT11 temperature, calculates fuzzy membership values for
+`normal`, `waspada`, `siaga`, and `bahaya`, and sends temperature plus fuzzy
+status through the mesh. Its local OLED, SD logging, LED, buzzer, and battery
+display behavior remain local node features.
+
+`ESP_Mesh_DHT22` reads DHT22 temperature, estimates battery percentage from its
+ADC battery divider, sends both values through the mesh, and uses adaptive deep
+sleep. It sleeps for a shorter time when the reading is warming up or changing
+quickly, and sleeps longer when the temperature is stable.
 
 ## How The Network Works
 
-The simulated sensor nodes join the same painlessMesh network as the gateway.
-Every node periodically broadcasts lightweight connectivity reports. The
-DS18B20 gateway advertises itself with `GW` beacons, learns the mesh topology,
-and forwards live sensor packets to the LoRa receiver.
+The real sensor nodes join the same painlessMesh network as the gateway. Every
+node periodically broadcasts lightweight connectivity reports. The DS18B20
+gateway advertises itself with `GW` beacons, learns the mesh topology, and
+forwards live sensor packets to the LoRa receiver.
 
 Sensor nodes keep only the newest value. They do not store history and they do
 not send batches. This keeps the UI timing simple: the PC treats each value as
@@ -110,13 +123,15 @@ data: [[0,0,0,0,0,0,0],[],[],[],[],[],[],[]]
 
 | Behavior | Default interval |
 | --- | --- |
-| Simulated BME280 temperature and Kalman update | `2500 ms` |
-| Simulated DHT11 temperature and fuzzy update | `2500 ms` |
-| Simulated DHT22 temperature and battery update after wake | `2500 ms` |
-| Simulated DHT22 awake window after reading | `5000 ms` |
-| Simulated DHT22 fast adaptive sleep | `10000 ms` |
-| Simulated DHT22 moderate adaptive sleep | `30000 ms` |
-| Simulated DHT22 stable adaptive sleep | `120000 ms` |
+| Real BME280 temperature and Kalman update | `2500 ms` |
+| Real DHT11 temperature and fuzzy update | `2500 ms` |
+| Real DHT11 OLED refresh | `1000 ms` |
+| Real DHT11 SD log write | `5000 ms` |
+| Real DHT22 temperature and battery update after wake | `2500 ms` |
+| Real DHT22 awake window after reading | `5000 ms` |
+| Real DHT22 fast adaptive sleep | `10000 ms` |
+| Real DHT22 moderate adaptive sleep | `30000 ms` |
+| Real DHT22 stable adaptive sleep | `120000 ms` |
 | DS18B20 gateway temperature update | `2500 ms` |
 | Mesh connectivity `LINKS` report | `1000 ms` |
 | DS18B20 gateway `GW` beacon | `1000 ms` |
@@ -218,9 +233,9 @@ For Indonesia, start from the current official rules, such as
 
 ```text
 Thermal Sensing Mesh/
-  ESP_Mesh_BME280DataSim/     Simulated BME280 mesh node
-  ESP_Mesh_DHT11DataSim/      Simulated DHT11 mesh node
-  ESP_Mesh_DHT22DataSim/      Simulated DHT22 mesh node
+  ESP_Mesh_BME280/            Real BME280 mesh node
+  ESP_Mesh_DHT11/             Real DHT11 mesh node
+  ESP_Mesh_DHT22/             Real DHT22 mesh node
   ESP_Mesh_DS18B20_Lora/      DS18B20 mesh gateway and LoRa transmitter
   ESP_LoraReceiver/           LoRa receiver, OLED display, and UI serial output
   libraries/MeshDebug/        Shared mesh debug/transport code
