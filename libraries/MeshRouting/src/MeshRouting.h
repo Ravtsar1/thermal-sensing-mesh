@@ -38,9 +38,9 @@ public:
   void addLocalReadingWithBattery(float temperature, float batteryPercent);
   void addLocalReadingWithFuzzy(float temperature,
                                 float normal,
-                                float waspada,
-                                float siaga,
-                                float bahaya);
+                                float caution,
+                                float warning,
+                                float danger);
 
   // Only the gateway sketch sets this; it forwards DATA packets to LoRa.
   void setGatewaySender(GatewayDataSender sender);
@@ -79,9 +79,9 @@ private:
     float kalmanTemperature;
     float batteryPercent;
     float fuzzyNormal;
-    float fuzzyWaspada;
-    float fuzzySiaga;
-    float fuzzyBahaya;
+    float fuzzyCaution;
+    float fuzzyWarning;
+    float fuzzyDanger;
     bool available;
     bool hasKalman;
     bool hasBattery;

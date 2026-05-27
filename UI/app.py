@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Sesuaikan base directory agar mengarah ke Hot Storage (Live)
+# Resolve paths to the live hot-storage folder.
 BASE_DIR = Path(__file__).resolve().parent
 LIVE_DATA_DIR = BASE_DIR / "data" / "live"
 ARCHIVE_DATA_DIR = BASE_DIR / "data" / "archive"
@@ -161,7 +161,7 @@ def load_live_multi_value_file(path, value_columns):
 # UTILITY: CLEAR LIVE DATA FUNCTION
 # =========================================================
 def clear_live_data():
-    """Mengosongkan semua CSV di folder live, menyisakan header-nya saja."""
+    """Clear all live CSV files while keeping their header rows."""
     if not LIVE_DATA_DIR.exists():
         return
 
@@ -187,7 +187,7 @@ def clear_live_data():
 
     if DHT11_FUZZY_FILE.exists():
         with open(DHT11_FUZZY_FILE, "w", encoding="utf-8") as f:
-            f.write("time,normal,waspada,siaga,bahaya\n")
+            f.write("time,normal,caution,warning,danger\n")
 
 # =========================================================
 # SIDEBAR CONTROL PANEL
@@ -210,7 +210,7 @@ with st.sidebar:
     st.subheader("Data Management")
     if st.button("Clear Live Graph", width="stretch", help="Wipes the current dashboard view. Does not affect permanent archive data."):
         clear_live_data()
-        # Paksa Streamlit untuk memuat ulang halaman agar grafik langsung kosong
+        # Force Streamlit to reload so the charts clear immediately.
         st.rerun()
 
 # =========================================================
@@ -236,7 +236,7 @@ bme280_kalman_data = load_live_value_file(BME280_KALMAN_FILE, "temp")
 dht22_battery_data = load_live_value_file(DHT22_BATTERY_FILE, "battery")
 dht11_fuzzy_data = load_live_multi_value_file(
     DHT11_FUZZY_FILE,
-    ["normal", "waspada", "siaga", "bahaya"]
+    ["normal", "caution", "warning", "danger"]
 )
 
 # =========================================================
@@ -377,9 +377,9 @@ if dht11_fuzzy_data is not None:
     fuzzy_fig = go.Figure()
     fuzzy_columns = [
         ("normal", "Normal"),
-        ("waspada", "Waspada"),
-        ("siaga", "Siaga"),
-        ("bahaya", "Bahaya")
+        ("caution", "Caution"),
+        ("warning", "Warning"),
+        ("danger", "Danger")
     ]
 
     for column_name, label in fuzzy_columns:

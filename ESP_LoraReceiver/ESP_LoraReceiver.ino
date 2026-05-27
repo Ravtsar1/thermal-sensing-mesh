@@ -144,7 +144,7 @@ void printUiDataLine(const char *sensorName,
   // Extra live telemetry arrays:
   // index 5 = BME280 Kalman-filtered temperature
   // index 6 = DHT22 battery percentage
-  // index 7 = DHT11 fuzzy membership values [normal, waspada, siaga, bahaya]
+  // index 7 = DHT11 fuzzy membership values [normal, caution, warning, danger]
   Serial.print(",");
   printUiValue(kalmanTemperature, hasKalman);
   Serial.print(",");

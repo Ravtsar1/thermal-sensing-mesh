@@ -97,7 +97,7 @@ the second value as battery percentage from `0` to `100`.
 `DHT11_Fuzzy` contains one row:
 
 ```text
-[0, normal, waspada, siaga, bahaya]
+[0, normal, caution, warning, danger]
 ```
 
 If the receiver has no fresh LoRa value, it periodically prints:

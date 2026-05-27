@@ -17,9 +17,9 @@ float simulatedTemperature = 25.8;
 
 struct FuzzyStatus {
   float normal;
-  float waspada;
-  float siaga;
-  float bahaya;
+  float caution;
+  float warning;
+  float danger;
 };
 
 // DHT11 is still simulated. The random walk prevents every packet from having
@@ -45,33 +45,33 @@ FuzzyStatus calculateFuzzyStatus(float temperature) {
   }
 
   if (temperature <= 20.0f || temperature >= 37.0f) {
-    fuzzy.waspada = 0.0f;
+    fuzzy.caution = 0.0f;
   } else if (temperature <= 32.0f) {
-    fuzzy.waspada = (temperature - 20.0f) / 12.0f;
+    fuzzy.caution = (temperature - 20.0f) / 12.0f;
   } else {
-    fuzzy.waspada = (37.0f - temperature) / 5.0f;
+    fuzzy.caution = (37.0f - temperature) / 5.0f;
   }
 
   if (temperature <= 32.0f || temperature >= 39.0f) {
-    fuzzy.siaga = 0.0f;
+    fuzzy.warning = 0.0f;
   } else if (temperature <= 37.0f) {
-    fuzzy.siaga = (temperature - 32.0f) / 5.0f;
+    fuzzy.warning = (temperature - 32.0f) / 5.0f;
   } else {
-    fuzzy.siaga = (39.0f - temperature) / 2.0f;
+    fuzzy.warning = (39.0f - temperature) / 2.0f;
   }
 
   if (temperature <= 37.0f) {
-    fuzzy.bahaya = 0.0f;
+    fuzzy.danger = 0.0f;
   } else if (temperature <= 39.0f) {
-    fuzzy.bahaya = (temperature - 37.0f) / 2.0f;
+    fuzzy.danger = (temperature - 37.0f) / 2.0f;
   } else {
-    fuzzy.bahaya = 1.0f;
+    fuzzy.danger = 1.0f;
   }
 
   fuzzy.normal = roundThree(constrain(fuzzy.normal, 0.0f, 1.0f));
-  fuzzy.waspada = roundThree(constrain(fuzzy.waspada, 0.0f, 1.0f));
-  fuzzy.siaga = roundThree(constrain(fuzzy.siaga, 0.0f, 1.0f));
-  fuzzy.bahaya = roundThree(constrain(fuzzy.bahaya, 0.0f, 1.0f));
+  fuzzy.caution = roundThree(constrain(fuzzy.caution, 0.0f, 1.0f));
+  fuzzy.warning = roundThree(constrain(fuzzy.warning, 0.0f, 1.0f));
+  fuzzy.danger = roundThree(constrain(fuzzy.danger, 0.0f, 1.0f));
   return fuzzy;
 }
 
@@ -85,17 +85,17 @@ void publishTemperature() {
   // feed the UI's DHT11_Fuzzy stream.
   meshRouting.addLocalReadingWithFuzzy(simulatedTemperature,
                                        fuzzy.normal,
-                                       fuzzy.waspada,
-                                       fuzzy.siaga,
-                                       fuzzy.bahaya);
+                                       fuzzy.caution,
+                                       fuzzy.warning,
+                                       fuzzy.danger);
 
-  Serial.printf("%s simulated temperature saved: %.1f C, fuzzy N %.3f W %.3f S %.3f B %.3f\n",
+  Serial.printf("%s simulated temperature saved: %.1f C, fuzzy normal %.3f caution %.3f warning %.3f danger %.3f\n",
                 NODE_NAME,
                 simulatedTemperature,
                 fuzzy.normal,
-                fuzzy.waspada,
-                fuzzy.siaga,
-                fuzzy.bahaya);
+                fuzzy.caution,
+                fuzzy.warning,
+                fuzzy.danger);
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {
