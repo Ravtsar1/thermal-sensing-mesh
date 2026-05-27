@@ -222,12 +222,10 @@ printed by other parts of the program.
 
 ## Radio Frequency Note
 
-The public default LoRa frequency is `433175000L` or 433.175 MHz. Verify the
-current radio rules, output power, antenna gain, duty cycle, and module
-certification requirements for your location before transmitting.
-
-For Indonesia, start from the current official rules, such as
-[Permenkominfo No. 2 Tahun 2025](https://www.peraturan.go.id/files/permenkominfo-no-2-tahun-2025.pdf).
+The public default LoRa frequency is `433175000L` or 433.175 MHz. Before
+transmitting, check the radio rules for your own country or region, including
+allowed frequency bands, output power, antenna gain, duty cycle, and module
+certification requirements.
 
 ## Project Layout
 

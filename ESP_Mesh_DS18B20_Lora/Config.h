@@ -26,9 +26,8 @@ static const int LORA_SS = 4;
 static const int LORA_RST = 5;
 static const int LORA_DIO0 = 2;
 
-// Use the same LoRa frequency and sync word on the gateway and receiver.
-// 433.175 MHz is inside the commonly referenced 433.05-434.79 MHz SRD/LPWAN
-// range, but always check your local radio rules before transmitting.
+// Use a LoRa frequency permitted in your location, and keep the frequency and
+// sync word the same on the gateway and receiver.
 static const long LORA_FREQUENCY = 433175000L;
 static const byte LORA_SYNC_WORD = 0xF3;
 
