@@ -15,7 +15,7 @@ static const float SIM_BATTERY_START_PERCENT = 86.0f;
 static const float SIM_BATTERY_DRAIN_MIN_PERCENT = 0.0f;
 static const float SIM_BATTERY_DRAIN_MAX_PERCENT = 0.2f;
 
-static const unsigned long AWAKE_AFTER_READING_MS = 5000UL;
+static const unsigned long GATEWAY_ACK_TIMEOUT_MS = 5000UL;
 static const uint8_t TEMPERATURE_HISTORY_SIZE = 3;
 static const float TEMPERATURE_STABLE_DELTA_C = 0.3f;
 static const float TEMPERATURE_MODERATE_DELTA_C = 1.0f;

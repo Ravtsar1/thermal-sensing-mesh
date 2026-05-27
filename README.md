@@ -113,7 +113,7 @@ data: [[0,0,0,0,0,0,0],[],[],[],[],[],[],[]]
 | Simulated BME280 temperature and Kalman update | `2500 ms` |
 | Simulated DHT11 temperature and fuzzy update | `2500 ms` |
 | Simulated DHT22 temperature and battery update after wake | `2500 ms` |
-| Simulated DHT22 awake window after reading | `5000 ms` |
+| Simulated DHT22 gateway ACK wait before sleep | `5000 ms` |
 | Simulated DHT22 fast adaptive sleep | `10000 ms` |
 | Simulated DHT22 moderate adaptive sleep | `30000 ms` |
 | Simulated DHT22 stable adaptive sleep | `120000 ms` |

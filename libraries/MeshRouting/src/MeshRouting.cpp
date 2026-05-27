@@ -181,6 +181,16 @@ void MeshRouting::addLocalReadingWithFuzzy(float temperature,
                 latestReading.fuzzyDanger);
 }
 
+uint32_t MeshRouting::currentReadingSequence() const {
+  return latestReading.sequence;
+}
+
+bool MeshRouting::latestReadingAcked() const {
+  return latestReading.available &&
+         latestReading.sequence != 0 &&
+         latestReading.sequence == lastSentSequence;
+}
+
 void MeshRouting::handleMessage(uint32_t from, const String &msg) {
   if (msg.indexOf("\"t\":\"GW\"") >= 0) {
     StaticJsonDocument<256> gwDoc;

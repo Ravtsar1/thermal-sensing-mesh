@@ -17,9 +17,10 @@ static const float SIM_BATTERY_START_PERCENT = 86.0f;
 static const float SIM_BATTERY_DRAIN_MIN_PERCENT = 0.0f;
 static const float SIM_BATTERY_DRAIN_MAX_PERCENT = 0.2f;
 
-// Adaptive sleep matches the real DHT22 behavior, but the fastest sleep is
-// 10 seconds instead of the older reference sketch's 5 seconds.
-static const unsigned long AWAKE_AFTER_READING_MS = 5000UL;
+// After each successful reading, keep the ESP32 awake until the gateway-path
+// DATA_ACK arrives or this timeout expires, then deep-sleep for an adaptive
+// duration.
+static const unsigned long GATEWAY_ACK_TIMEOUT_MS = 5000UL;
 static const uint8_t TEMPERATURE_HISTORY_SIZE = 3;
 static const float TEMPERATURE_STABLE_DELTA_C = 0.3f;
 static const float TEMPERATURE_MODERATE_DELTA_C = 1.0f;

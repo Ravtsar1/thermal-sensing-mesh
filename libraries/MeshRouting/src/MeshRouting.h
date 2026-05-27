@@ -41,6 +41,8 @@ public:
                                 float caution,
                                 float warning,
                                 float danger);
+  uint32_t currentReadingSequence() const;
+  bool latestReadingAcked() const;
 
   // Only the gateway sketch sets this; it forwards DATA packets to LoRa.
   void setGatewaySender(GatewayDataSender sender);

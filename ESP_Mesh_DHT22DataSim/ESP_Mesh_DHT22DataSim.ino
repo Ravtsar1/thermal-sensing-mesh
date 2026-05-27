@@ -16,6 +16,7 @@ MeshRouting meshRouting;
 unsigned long lastSendMs = 0;
 unsigned long readingPublishedAtMs = 0;
 unsigned long selectedSleepIntervalMs = SLEEP_FAST_MS;
+uint32_t publishedReadingSequence = 0;
 bool readingPublishedThisWake = false;
 
 RTC_DATA_ATTR float simulatedTemperature = 25.1f;
@@ -193,10 +194,29 @@ void loop() {
     if (publishTemperature()) {
       readingPublishedThisWake = true;
       readingPublishedAtMs = millis();
+      publishedReadingSequence = meshRouting.currentReadingSequence();
+      Serial.printf("%s waiting up to %lu ms for gateway ACK on reading #%lu\n",
+                    NODE_NAME,
+                    GATEWAY_ACK_TIMEOUT_MS,
+                    (unsigned long)publishedReadingSequence);
     }
   }
 
-  if (readingPublishedThisWake && millis() - readingPublishedAtMs >= AWAKE_AFTER_READING_MS) {
-    enterConfiguredSleep();
+  if (readingPublishedThisWake) {
+    if (meshRouting.latestReadingAcked()) {
+      Serial.printf("%s gateway ACK received for reading #%lu\n",
+                    NODE_NAME,
+                    (unsigned long)publishedReadingSequence);
+      enterConfiguredSleep();
+      return;
+    }
+
+    if (millis() - readingPublishedAtMs >= GATEWAY_ACK_TIMEOUT_MS) {
+      Serial.printf("%s gateway ACK timeout for reading #%lu; sleeping and continuing with the next reading later\n",
+                    NODE_NAME,
+                    (unsigned long)publishedReadingSequence);
+      enterConfiguredSleep();
+      return;
+    }
   }
 }
