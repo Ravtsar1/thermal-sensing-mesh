@@ -34,6 +34,7 @@ CONNECTIVITY_FILE = LIVE_DATA_DIR / "connectivity.csv"
 BME280_KALMAN_FILE = LIVE_DATA_DIR / "bme280_kalman.csv"
 DHT22_BATTERY_FILE = LIVE_DATA_DIR / "dht22_battery.csv"
 DHT11_FUZZY_FILE = LIVE_DATA_DIR / "dht11_fuzzy.csv"
+CLEAR_GRAPH_AFTER_KEY = "clear_graph_after_dt"
 
 NODE_POSITIONS = {
     "receiver": {"x": 0.5, "y": 1.2},
@@ -62,6 +63,21 @@ def parse_live_time_column(time_values):
     today = pd.Timestamp.now().normalize()
     elapsed_time = pd.to_timedelta(time_values.astype(str).str.strip(), errors="coerce")
     return today + elapsed_time
+
+def get_clear_graph_cutoff():
+    return st.session_state.get(CLEAR_GRAPH_AFTER_KEY)
+
+def apply_clear_graph_cutoff(df):
+    """
+    The dashboard prefers today's archive so long runs do not disappear after
+    live CSV trimming. When the user clears the graph, keep the archive file
+    intact but hide rows captured before that click in the current UI session.
+    """
+    cutoff = get_clear_graph_cutoff()
+    if cutoff is None or df is None or "time_dt" not in df.columns:
+        return df
+
+    return df[df["time_dt"] > cutoff].copy()
 
 def dashboard_data_path(live_path):
     """
@@ -121,6 +137,7 @@ def load_live_value_file(path, value_column):
         df[value_column] = pd.to_numeric(df[value_column], errors="coerce")
         df["time_dt"] = parse_live_time_column(df["time"])
         df = df.dropna(subset=[value_column, "time_dt"])
+        df = apply_clear_graph_cutoff(df)
         df = df.sort_values("time_dt")
 
         if df.empty:
@@ -148,6 +165,7 @@ def load_live_multi_value_file(path, value_columns):
 
         df["time_dt"] = parse_live_time_column(df["time"])
         df = df.dropna(subset=[*value_columns, "time_dt"])
+        df = apply_clear_graph_cutoff(df)
         df = df.sort_values("time_dt")
 
         if df.empty:
@@ -209,6 +227,7 @@ with st.sidebar:
     
     st.subheader("Data Management")
     if st.button("Clear Live Graph", width="stretch", help="Wipes the current dashboard view. Does not affect permanent archive data."):
+        st.session_state[CLEAR_GRAPH_AFTER_KEY] = pd.Timestamp.now().floor("s")
         clear_live_data()
         # Force Streamlit to reload so the charts clear immediately.
         st.rerun()
@@ -426,6 +445,9 @@ else:
             st.info("Waiting for mesh connectivity data...")
         else:
             conn_df = conn_df.dropna(subset=["time", "connectivity"]).copy()
+            conn_df["time_dt"] = parse_live_time_column(conn_df["time"])
+            conn_df = conn_df.dropna(subset=["time_dt"])
+            conn_df = apply_clear_graph_cutoff(conn_df)
 
             if conn_df.empty:
                 st.info("Waiting for mesh connectivity data...")

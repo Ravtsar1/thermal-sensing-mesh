@@ -111,3 +111,9 @@ intended to be committed to Git.
 
 The firmware sends `0` as a placeholder time inside each sensor row. The Python
 scraper replaces it with the PC time when the receiver line arrives.
+
+## Clearing The Dashboard View
+
+The **Clear Live Graph** button resets the current dashboard view without
+deleting the permanent archive files. The dashboard hides rows captured before
+the button click and starts plotting new incoming rows as they arrive.

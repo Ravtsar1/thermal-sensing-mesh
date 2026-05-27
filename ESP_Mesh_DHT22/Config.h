@@ -12,9 +12,10 @@ static const uint16_t MESH_PORT = 5555;
 static const char *NODE_NAME = "DHT22";
 static const unsigned long SEND_INTERVAL_MS = 2500UL;
 
-// After each successful reading, keep the ESP32 awake long enough for mesh
-// routing, then deep-sleep for an adaptive duration.
-static const unsigned long AWAKE_AFTER_READING_MS = 5000UL;
+// After each successful reading, keep the ESP32 awake until the gateway-path
+// DATA_ACK arrives or this timeout expires, then deep-sleep for an adaptive
+// duration.
+static const unsigned long GATEWAY_ACK_TIMEOUT_MS = 5000UL;
 static const uint8_t TEMPERATURE_HISTORY_SIZE = 3;
 static const float TEMPERATURE_STABLE_DELTA_C = 0.3f;
 static const float TEMPERATURE_MODERATE_DELTA_C = 1.0f;

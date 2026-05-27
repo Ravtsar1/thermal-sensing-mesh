@@ -128,7 +128,7 @@ data: [[0,0,0,0,0,0,0],[],[],[],[],[],[],[]]
 | Real DHT11 OLED refresh | `1000 ms` |
 | Real DHT11 SD log write | `5000 ms` |
 | Real DHT22 temperature and battery update after wake | `2500 ms` |
-| Real DHT22 awake window after reading | `5000 ms` |
+| Real DHT22 gateway ACK wait before sleep | `5000 ms` |
 | Real DHT22 fast adaptive sleep | `10000 ms` |
 | Real DHT22 moderate adaptive sleep | `30000 ms` |
 | Real DHT22 stable adaptive sleep | `120000 ms` |
