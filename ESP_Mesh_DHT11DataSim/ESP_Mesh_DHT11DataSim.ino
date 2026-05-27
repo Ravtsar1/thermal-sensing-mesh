@@ -15,6 +15,13 @@ MeshRouting meshRouting;
 unsigned long lastSendMs = 0;
 float simulatedTemperature = 25.8;
 
+struct FuzzyStatus {
+  float normal;
+  float waspada;
+  float siaga;
+  float bahaya;
+};
+
 // DHT11 is still simulated. The random walk prevents every packet from having
 // the same value while keeping the output inside a realistic range.
 float nextTemperature(float current, float minimum, float maximum) {
@@ -22,15 +29,73 @@ float nextTemperature(float current, float minimum, float maximum) {
   return constrain(current, minimum, maximum);
 }
 
+float roundThree(float value) {
+  return roundf(value * 1000.0f) / 1000.0f;
+}
+
+FuzzyStatus calculateFuzzyStatus(float temperature) {
+  FuzzyStatus fuzzy;
+
+  if (temperature <= 20.0f) {
+    fuzzy.normal = 1.0f;
+  } else if (temperature <= 32.0f) {
+    fuzzy.normal = (32.0f - temperature) / 12.0f;
+  } else {
+    fuzzy.normal = 0.0f;
+  }
+
+  if (temperature <= 20.0f || temperature >= 37.0f) {
+    fuzzy.waspada = 0.0f;
+  } else if (temperature <= 32.0f) {
+    fuzzy.waspada = (temperature - 20.0f) / 12.0f;
+  } else {
+    fuzzy.waspada = (37.0f - temperature) / 5.0f;
+  }
+
+  if (temperature <= 32.0f || temperature >= 39.0f) {
+    fuzzy.siaga = 0.0f;
+  } else if (temperature <= 37.0f) {
+    fuzzy.siaga = (temperature - 32.0f) / 5.0f;
+  } else {
+    fuzzy.siaga = (39.0f - temperature) / 2.0f;
+  }
+
+  if (temperature <= 37.0f) {
+    fuzzy.bahaya = 0.0f;
+  } else if (temperature <= 39.0f) {
+    fuzzy.bahaya = (temperature - 37.0f) / 2.0f;
+  } else {
+    fuzzy.bahaya = 1.0f;
+  }
+
+  fuzzy.normal = roundThree(constrain(fuzzy.normal, 0.0f, 1.0f));
+  fuzzy.waspada = roundThree(constrain(fuzzy.waspada, 0.0f, 1.0f));
+  fuzzy.siaga = roundThree(constrain(fuzzy.siaga, 0.0f, 1.0f));
+  fuzzy.bahaya = roundThree(constrain(fuzzy.bahaya, 0.0f, 1.0f));
+  return fuzzy;
+}
+
 void publishTemperature() {
   simulatedTemperature = nextTemperature(simulatedTemperature, 24.5f, 28.0f);
   simulatedTemperature = roundf(simulatedTemperature * 10.0f) / 10.0f;
+  FuzzyStatus fuzzy = calculateFuzzyStatus(simulatedTemperature);
 
   // Store only the newest value. Older unsent values are overwritten on the
-  // next cycle, so there is no history buffer or timestamp sync.
-  meshRouting.addLocalReading(simulatedTemperature);
+  // next cycle, so there is no history buffer or timestamp sync. Fuzzy values
+  // feed the UI's DHT11_Fuzzy stream.
+  meshRouting.addLocalReadingWithFuzzy(simulatedTemperature,
+                                       fuzzy.normal,
+                                       fuzzy.waspada,
+                                       fuzzy.siaga,
+                                       fuzzy.bahaya);
 
-  Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
+  Serial.printf("%s simulated temperature saved: %.1f C, fuzzy N %.3f W %.3f S %.3f B %.3f\n",
+                NODE_NAME,
+                simulatedTemperature,
+                fuzzy.normal,
+                fuzzy.waspada,
+                fuzzy.siaga,
+                fuzzy.bahaya);
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {

@@ -31,11 +31,30 @@ arduino-cli.yaml
 # Editor and OS files
 .vscode/
 .idea/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
 *.swp
 *.tmp
 *.bak
 .DS_Store
 Thumbs.db
+
+# UI runtime telemetry logs. The app recreates these locally.
+UI/data/live/*.csv
+UI/data/archive/
+
+# Local collaborator/reference sketches kept for comparison, not publishing.
+*Reference*/
+
+# This branch publishes the simulated-temperature firmware. Real-temperature
+# sensor sketches live on the real-temperature branch.
+ESP_Mesh_BME280/
+ESP_Mesh_DHT11/
+ESP_Mesh_DHT22/
 
 # Optional local overrides. The committed Config.h files contain public defaults.
 Config.local.h

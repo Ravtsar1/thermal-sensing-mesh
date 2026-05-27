@@ -16,6 +16,12 @@ float temperatures[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 bool sensorOnline[4] = {false, false, false, false};
 uint32_t sensorSequences[4] = {0, 0, 0, 0};
 bool uiConnectivity[7] = {false, false, false, false, false, false, false};
+float bme280KalmanTemperature = 0.0f;
+float dht22BatteryPercent = 0.0f;
+float dht11FuzzyValues[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+bool bme280KalmanOnline = false;
+bool dht22BatteryOnline = false;
+bool dht11FuzzyOnline = false;
 
 bool displayReady = false;
 bool loraReady = false;
@@ -84,21 +90,47 @@ void printUiConnectivityArray() {
   Serial.print("]");
 }
 
-void printUiTemperatureValue(float temperature, bool includeValue) {
+void printUiValue(float value, bool includeValue) {
   Serial.print("[");
 
   if (includeValue) {
     // The first value is a placeholder. UI/scrapper.py now uses PC arrival
     // time, so the ESP32 no longer sends sensor-side timestamps.
     Serial.print("[0,");
-    Serial.print(temperature, 1);
+    Serial.print(value, 1);
     Serial.print("]");
   }
 
   Serial.print("]");
 }
 
-void printUiDataLine(const char *sensorName, float temperature, bool hasValue) {
+void printUiFuzzyValue(bool includeValue) {
+  Serial.print("[");
+
+  if (includeValue) {
+    // The first value is the same placeholder used by the other streams.
+    Serial.print("[0,");
+    Serial.print(dht11FuzzyValues[0], 3);
+    Serial.print(",");
+    Serial.print(dht11FuzzyValues[1], 3);
+    Serial.print(",");
+    Serial.print(dht11FuzzyValues[2], 3);
+    Serial.print(",");
+    Serial.print(dht11FuzzyValues[3], 3);
+    Serial.print("]");
+  }
+
+  Serial.print("]");
+}
+
+void printUiDataLine(const char *sensorName,
+                     float temperature,
+                     bool hasValue,
+                     float kalmanTemperature,
+                     bool hasKalman,
+                     float batteryPercent,
+                     bool hasBattery,
+                     bool hasFuzzy) {
   int8_t activeUiSensor = hasValue ? uiSensorIndexByName(sensorName) : -1;
 
   Serial.print("data: [");
@@ -106,15 +138,26 @@ void printUiDataLine(const char *sensorName, float temperature, bool hasValue) {
 
   for (uint8_t i = 0; i < 4; i++) {
     Serial.print(",");
-    printUiTemperatureValue(temperature, activeUiSensor == i);
+    printUiValue(temperature, activeUiSensor == i);
   }
+
+  // Extra live telemetry arrays:
+  // index 5 = BME280 Kalman-filtered temperature
+  // index 6 = DHT22 battery percentage
+  // index 7 = DHT11 fuzzy membership values [normal, waspada, siaga, bahaya]
+  Serial.print(",");
+  printUiValue(kalmanTemperature, hasKalman);
+  Serial.print(",");
+  printUiValue(batteryPercent, hasBattery);
+  Serial.print(",");
+  printUiFuzzyValue(hasFuzzy);
 
   Serial.println("]");
 }
 
 void printUiDisconnectedDataLine() {
   clearUiConnectivity();
-  printUiDataLine("", 0.0f, false);
+  printUiDataLine("", 0.0f, false, 0.0f, false, 0.0f, false, false);
 }
 
 void printUiDisconnectedLineIfNeeded() {
@@ -268,6 +311,29 @@ void handleTemperaturePacket(const String &packet) {
     sensorSequences[sensorIndex] = doc["seq"] | 0;
     temperatures[sensorIndex] = doc["temp"] | 0.0f;
     sensorOnline[sensorIndex] = true;
+    bool hasKalman = strcmp(sensorName, "BME280") == 0 && !doc["kalman"].isNull();
+    bool hasBattery = strcmp(sensorName, "DHT22") == 0 && !doc["battery"].isNull();
+    bool hasFuzzy = strcmp(sensorName, "DHT11") == 0 && !doc["fuzzy"].isNull();
+
+    if (hasKalman) {
+      bme280KalmanTemperature = doc["kalman"] | 0.0f;
+      bme280KalmanOnline = true;
+    }
+    if (hasBattery) {
+      dht22BatteryPercent = doc["battery"] | 0.0f;
+      dht22BatteryOnline = true;
+    }
+    if (hasFuzzy) {
+      JsonArray fuzzy = doc["fuzzy"].as<JsonArray>();
+      if (fuzzy.size() >= 4) {
+        for (uint8_t i = 0; i < 4; i++) {
+          dht11FuzzyValues[i] = fuzzy[i] | 0.0f;
+        }
+        dht11FuzzyOnline = true;
+      } else {
+        hasFuzzy = false;
+      }
+    }
 
     updateUiConnectivity(doc["conn"].as<JsonArray>());
     lastSequence = doc["s"] | 0;
@@ -278,8 +344,28 @@ void handleTemperaturePacket(const String &packet) {
                   sensorName,
                   (unsigned long)sensorSequences[sensorIndex],
                   temperatures[sensorIndex]);
+    if (hasKalman) {
+      Serial.printf("BME280 kalman = %.1f C\n", bme280KalmanTemperature);
+    }
+    if (hasBattery) {
+      Serial.printf("DHT22 battery = %.1f%%\n", dht22BatteryPercent);
+    }
+    if (hasFuzzy) {
+      Serial.printf("DHT11 fuzzy N %.3f W %.3f S %.3f B %.3f\n",
+                    dht11FuzzyValues[0],
+                    dht11FuzzyValues[1],
+                    dht11FuzzyValues[2],
+                    dht11FuzzyValues[3]);
+    }
     printTemperatureSummary();
-    printUiDataLine(sensorName, temperatures[sensorIndex], true);
+    printUiDataLine(sensorName,
+                    temperatures[sensorIndex],
+                    true,
+                    bme280KalmanTemperature,
+                    hasKalman && bme280KalmanOnline,
+                    dht22BatteryPercent,
+                    hasBattery && dht22BatteryOnline,
+                    hasFuzzy && dht11FuzzyOnline);
     updateDisplay();
     sendAck(lastSequence);
     return;

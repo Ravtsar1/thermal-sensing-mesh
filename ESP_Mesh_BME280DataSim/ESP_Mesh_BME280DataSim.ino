@@ -14,6 +14,37 @@ MeshRouting meshRouting;
 
 unsigned long lastSendMs = 0;
 float simulatedTemperature = 25.4;
+bool kalmanReady = false;
+
+class KalmanFilter {
+public:
+  KalmanFilter(float q, float r, float p, float initialValue)
+      : q(q), r(r), p(p), x(initialValue) {}
+
+  void reset(float value) {
+    x = value;
+    p = SIM_KALMAN_ESTIMATE_ERROR;
+  }
+
+  float update(float measurement) {
+    p = p + q;
+    float gain = p / (p + r);
+    x = x + gain * (measurement - x);
+    p = (1.0f - gain) * p;
+    return x;
+  }
+
+private:
+  float q;
+  float r;
+  float p;
+  float x;
+};
+
+KalmanFilter simulatedKalman(SIM_KALMAN_PROCESS_NOISE,
+                             SIM_KALMAN_MEASUREMENT_NOISE,
+                             SIM_KALMAN_ESTIMATE_ERROR,
+                             simulatedTemperature);
 
 // BME280 is still simulated for now. This small random walk gives a realistic
 // looking temperature without requiring the real sensor library or wiring.
@@ -25,12 +56,21 @@ float nextTemperature(float current, float minimum, float maximum) {
 void publishTemperature() {
   simulatedTemperature = nextTemperature(simulatedTemperature, 24.0f, 27.0f);
   simulatedTemperature = roundf(simulatedTemperature * 10.0f) / 10.0f;
+  if (!kalmanReady) {
+    simulatedKalman.reset(simulatedTemperature);
+    kalmanReady = true;
+  }
+  float kalmanTemperature = roundf(simulatedKalman.update(simulatedTemperature) * 10.0f) / 10.0f;
 
   // Store only the newest value. Older unsent values are overwritten on the
-  // next cycle, so there is no history buffer or timestamp sync.
-  meshRouting.addLocalReading(simulatedTemperature);
+  // next cycle, so there is no history buffer or timestamp sync. The optional
+  // Kalman value feeds the UI's BME280_Kalman stream.
+  meshRouting.addLocalReadingWithKalman(simulatedTemperature, kalmanTemperature);
 
-  Serial.printf("%s simulated temperature saved: %.1f C\n", NODE_NAME, simulatedTemperature);
+  Serial.printf("%s simulated temperature saved: %.1f C, kalman %.1f C\n",
+                NODE_NAME,
+                simulatedTemperature,
+                kalmanTemperature);
 }
 
 void handleMeshMessage(uint32_t from, const String &msg) {

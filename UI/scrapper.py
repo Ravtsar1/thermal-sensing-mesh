@@ -43,6 +43,13 @@ SENSOR_MAP = {
     4: "ds18b20"
 }
 
+EXTRA_STREAMS = {
+    5: ("bme280_kalman.csv", "time,temp", ("temp",)),
+    6: ("dht22_battery.csv", "time,battery", ("battery",)),
+    7: ("dht11_fuzzy.csv", "time,normal,waspada,siaga,bahaya",
+        ("normal", "waspada", "siaga", "bahaya"))
+}
+
 # =========================================================
 # STORAGE HELPER FUNCTIONS
 # =========================================================
@@ -225,6 +232,28 @@ def main():
                                 # Double-write strategy
                                 manage_live_data(filename, "time,temp", csv_row)
                                 save_to_archive(filename, "time,temp", csv_row)
+
+                    # 5. Process optional extra live streams.
+                    # Index 5: BME280 Kalman-filtered temperature.
+                    # Index 6: DHT22 battery percentage.
+                    # Index 7: DHT11 fuzzy membership values.
+                    for index, (filename, header, value_columns) in EXTRA_STREAMS.items():
+                        if len(payload) <= index:
+                            continue
+
+                        records = payload[index]
+                        if not isinstance(records, list) or len(records) == 0:
+                            continue
+
+                        for record in records:
+                            if not isinstance(record, list) or len(record) < len(value_columns) + 1:
+                                continue
+
+                            values = [float(value) for value in record[-len(value_columns):]]
+                            formatted_values = ",".join(f"{value:.3f}" for value in values)
+                            csv_row = f"{base_log_time},{formatted_values}"
+                            manage_live_data(filename, header, csv_row)
+                            save_to_archive(filename, header, csv_row)
 
                 except json.JSONDecodeError:
                     print("Warning: Received malformed JSON string.")

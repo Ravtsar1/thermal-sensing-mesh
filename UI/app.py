@@ -21,6 +21,7 @@ st.set_page_config(
 # Sesuaikan base directory agar mengarah ke Hot Storage (Live)
 BASE_DIR = Path(__file__).resolve().parent
 LIVE_DATA_DIR = BASE_DIR / "data" / "live"
+ARCHIVE_DATA_DIR = BASE_DIR / "data" / "archive"
 
 SENSOR_FILES = {
     "ds18b20": LIVE_DATA_DIR / "ds18b20.csv",
@@ -30,6 +31,9 @@ SENSOR_FILES = {
 }
 
 CONNECTIVITY_FILE = LIVE_DATA_DIR / "connectivity.csv"
+BME280_KALMAN_FILE = LIVE_DATA_DIR / "bme280_kalman.csv"
+DHT22_BATTERY_FILE = LIVE_DATA_DIR / "dht22_battery.csv"
+DHT11_FUZZY_FILE = LIVE_DATA_DIR / "dht11_fuzzy.csv"
 
 NODE_POSITIONS = {
     "receiver": {"x": 0.5, "y": 1.2},
@@ -48,6 +52,30 @@ EXPECTED_EDGES = [
     ("dht22", "ds18b20"),
     ("ds18b20", "receiver")
 ]
+
+def parse_live_time_column(time_values):
+    """
+    Live CSV files store only HH:MM:SS. If pandas parses that directly as a
+    datetime, it uses 1900-01-01 as the missing date. Attach today's date so
+    the dashboard timestamps represent the actual live run.
+    """
+    today = pd.Timestamp.now().normalize()
+    elapsed_time = pd.to_timedelta(time_values.astype(str).str.strip(), errors="coerce")
+    return today + elapsed_time
+
+def dashboard_data_path(live_path):
+    """
+    Prefer today's archive for dashboard plots so a same-day run is not limited
+    by the rolling 1,000-row live CSV files. Fall back to live data while the
+    archive file does not exist yet.
+    """
+    live_path = Path(live_path)
+    today_folder = pd.Timestamp.now().strftime("%Y-%m-%d")
+    archive_path = ARCHIVE_DATA_DIR / today_folder / live_path.name
+
+    if archive_path.exists():
+        return archive_path
+    return live_path
 
 def parse_connectivity_array(raw_value):
     try:
@@ -78,6 +106,57 @@ def parse_connectivity_array(raw_value):
 
     return parsed_values
 
+def load_live_value_file(path, value_column):
+    path = dashboard_data_path(path)
+
+    if not path.exists():
+        return None
+
+    try:
+        df = pd.read_csv(path, on_bad_lines='skip')
+        if not {"time", value_column}.issubset(df.columns):
+            return None
+
+        df = df.dropna(subset=["time", value_column]).copy()
+        df[value_column] = pd.to_numeric(df[value_column], errors="coerce")
+        df["time_dt"] = parse_live_time_column(df["time"])
+        df = df.dropna(subset=[value_column, "time_dt"])
+        df = df.sort_values("time_dt")
+
+        if df.empty:
+            return None
+        return df
+    except Exception as e:
+        st.error(f"Failed to read {path}: {e}")
+        return None
+
+def load_live_multi_value_file(path, value_columns):
+    path = dashboard_data_path(path)
+
+    if not path.exists():
+        return None
+
+    required_columns = {"time", *value_columns}
+    try:
+        df = pd.read_csv(path, on_bad_lines='skip')
+        if not required_columns.issubset(df.columns):
+            return None
+
+        df = df.dropna(subset=list(required_columns)).copy()
+        for value_column in value_columns:
+            df[value_column] = pd.to_numeric(df[value_column], errors="coerce")
+
+        df["time_dt"] = parse_live_time_column(df["time"])
+        df = df.dropna(subset=[*value_columns, "time_dt"])
+        df = df.sort_values("time_dt")
+
+        if df.empty:
+            return None
+        return df
+    except Exception as e:
+        st.error(f"Failed to read {path}: {e}")
+        return None
+
 # =========================================================
 # UTILITY: CLEAR LIVE DATA FUNCTION
 # =========================================================
@@ -97,6 +176,18 @@ def clear_live_data():
     if CONNECTIVITY_FILE.exists():
         with open(CONNECTIVITY_FILE, "w", encoding="utf-8") as f:
             f.write("time,connectivity\n")
+
+    if BME280_KALMAN_FILE.exists():
+        with open(BME280_KALMAN_FILE, "w", encoding="utf-8") as f:
+            f.write("time,temp\n")
+
+    if DHT22_BATTERY_FILE.exists():
+        with open(DHT22_BATTERY_FILE, "w", encoding="utf-8") as f:
+            f.write("time,battery\n")
+
+    if DHT11_FUZZY_FILE.exists():
+        with open(DHT11_FUZZY_FILE, "w", encoding="utf-8") as f:
+            f.write("time,normal,waspada,siaga,bahaya\n")
 
 # =========================================================
 # SIDEBAR CONTROL PANEL
@@ -139,31 +230,14 @@ st.title("🌡️ Thermal Mesh Monitoring Dashboard")
 sensor_data = {}
 
 for sensor_name, filename in SENSOR_FILES.items():
-    path = Path(filename)
-    
-    if not path.exists():
-        sensor_data[sensor_name] = None
-        continue
+    sensor_data[sensor_name] = load_live_value_file(filename, "temp")
 
-    try:
-        df = pd.read_csv(filename, on_bad_lines='skip')
-        if not {"time", "temp"}.issubset(df.columns):
-            sensor_data[sensor_name] = None
-            continue
-
-        df = df.dropna(subset=["time", "temp"]).copy()
-        df["temp"] = pd.to_numeric(df["temp"], errors="coerce")
-        df["time_dt"] = pd.to_datetime(df["time"].astype(str), format="%H:%M:%S", errors="coerce")
-        df = df.dropna(subset=["temp", "time_dt"])
-        df = df.sort_values("time_dt")
-
-        if df.empty:
-            sensor_data[sensor_name] = None
-        else:
-            sensor_data[sensor_name] = df
-    except Exception as e:
-        st.error(f"Failed to read {path}: {e}")
-        sensor_data[sensor_name] = None
+bme280_kalman_data = load_live_value_file(BME280_KALMAN_FILE, "temp")
+dht22_battery_data = load_live_value_file(DHT22_BATTERY_FILE, "battery")
+dht11_fuzzy_data = load_live_multi_value_file(
+    DHT11_FUZZY_FILE,
+    ["normal", "waspada", "siaga", "bahaya"]
+)
 
 # =========================================================
 # METRIC CARDS (CURRENT TEMPERATURES)
@@ -205,6 +279,14 @@ for sensor_name, df in sensor_data.items():
     else:
         chart_df = chart_df.join(temp_series, how="outer")
 
+if bme280_kalman_data is not None:
+    kalman_series = bme280_kalman_data.groupby("time_dt")["temp"].last()
+    kalman_series.name = "BME280 KALMAN"
+    if chart_df.empty:
+        chart_df = pd.DataFrame(kalman_series)
+    else:
+        chart_df = chart_df.join(kalman_series, how="outer")
+
 if not chart_df.empty:
     temperature_fig = go.Figure()
 
@@ -230,6 +312,15 @@ if not chart_df.empty:
                 marker=dict(size=7)
             ))
 
+        if bme280_kalman_data is not None:
+            temperature_fig.add_trace(go.Scatter(
+                x=bme280_kalman_data["time_dt"],
+                y=bme280_kalman_data["temp"],
+                mode="markers",
+                name="BME280 KALMAN",
+                marker=dict(size=8, symbol="diamond")
+            ))
+
     temperature_fig.update_layout(
         xaxis_title="Time",
         yaxis_title="Temperature (C)",
@@ -246,17 +337,88 @@ else:
 st.divider()
 
 # =========================================================
+# DHT22 BATTERY GRAPH
+# =========================================================
+st.header("DHT22 Battery")
+
+if dht22_battery_data is not None:
+    battery_fig = go.Figure()
+    battery_fig.add_trace(go.Scatter(
+        x=dht22_battery_data["time_dt"],
+        y=dht22_battery_data["battery"],
+        mode="lines+markers",
+        name="DHT22 Battery",
+        marker=dict(size=7)
+    ))
+
+    battery_fig.update_layout(
+        xaxis_title="Time",
+        yaxis_title="Battery (%)",
+        xaxis=dict(type="date", tickformat="%H:%M:%S"),
+        yaxis=dict(range=[0, 100], ticksuffix="%"),
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=260,
+        showlegend=False
+    )
+
+    st.plotly_chart(battery_fig, width="stretch")
+    st.caption(f"Last DHT22 battery update: {dht22_battery_data.iloc[-1]['time']}")
+else:
+    st.info("No DHT22 battery data available yet.")
+
+st.divider()
+
+# =========================================================
+# DHT11 FUZZY STATUS GRAPH
+# =========================================================
+st.header("DHT11 Fuzzy Status")
+
+if dht11_fuzzy_data is not None:
+    fuzzy_fig = go.Figure()
+    fuzzy_columns = [
+        ("normal", "Normal"),
+        ("waspada", "Waspada"),
+        ("siaga", "Siaga"),
+        ("bahaya", "Bahaya")
+    ]
+
+    for column_name, label in fuzzy_columns:
+        fuzzy_fig.add_trace(go.Scatter(
+            x=dht11_fuzzy_data["time_dt"],
+            y=dht11_fuzzy_data[column_name],
+            mode="lines",
+            name=label
+        ))
+
+    fuzzy_fig.update_layout(
+        xaxis_title="Time",
+        yaxis_title="Membership",
+        xaxis=dict(type="date", tickformat="%H:%M:%S"),
+        yaxis=dict(range=[0, 1]),
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=300,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    st.plotly_chart(fuzzy_fig, width="stretch")
+    st.caption(f"Last DHT11 fuzzy update: {dht11_fuzzy_data.iloc[-1]['time']}")
+else:
+    st.info("No DHT11 fuzzy data available yet.")
+
+st.divider()
+
+# =========================================================
 # MESH CONNECTIVITY GRAPH (FAST PLOTLY RENDER)
 # =========================================================
 st.header("Mesh Connectivity")
 
-connectivity_path = Path(CONNECTIVITY_FILE)
+connectivity_path = dashboard_data_path(CONNECTIVITY_FILE)
 
 if not connectivity_path.exists():
     st.warning(f"Connectivity file not found: {CONNECTIVITY_FILE}")
 else:
     try:
-        conn_df = pd.read_csv(CONNECTIVITY_FILE, on_bad_lines='skip')
+        conn_df = pd.read_csv(connectivity_path, on_bad_lines='skip')
 
         if not {"time", "connectivity"}.issubset(conn_df.columns):
             st.warning(f"Connectivity file has invalid columns.")
@@ -389,11 +551,29 @@ with col1:
             else:
                 st.dataframe(df.tail(10), width="stretch")
 
+        st.markdown("**BME280 KALMAN**")
+        if bme280_kalman_data is None:
+            st.write("No live data available.")
+        else:
+            st.dataframe(bme280_kalman_data.tail(10), width="stretch")
+
+        st.markdown("**DHT22 BATTERY**")
+        if dht22_battery_data is None:
+            st.write("No live data available.")
+        else:
+            st.dataframe(dht22_battery_data.tail(10), width="stretch")
+
+        st.markdown("**DHT11 FUZZY**")
+        if dht11_fuzzy_data is None:
+            st.write("No live data available.")
+        else:
+            st.dataframe(dht11_fuzzy_data.tail(10), width="stretch")
+
 with col2:
     with st.expander("View Raw Connectivity Data"):
         if connectivity_path.exists():
             try:
-                conn_df = pd.read_csv(CONNECTIVITY_FILE)
+                conn_df = pd.read_csv(connectivity_path)
                 if conn_df.empty:
                     st.write("No live data available.")
                 else:

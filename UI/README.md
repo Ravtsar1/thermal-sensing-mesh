@@ -1,262 +1,113 @@
 # Thermal Mesh UI
 
-A real-time thermal mesh monitoring dashboard built with Streamlit, Plotly, and serial telemetry integration.
+Thermal Mesh UI is a local Streamlit dashboard for the ESP32 LoRa receiver. It
+can either read real receiver serial output or generate simulated telemetry for
+testing without hardware.
 
-This system supports both:
+## Files
 
-* **Simulation Mode** → generates randomized telemetry for testing
-* **Real Hardware Mode** → receives live ESP32 telemetry via serial communication
+| File | Purpose |
+| --- | --- |
+| `main.py` | Starts the dashboard plus the scraper or simulator |
+| `app.py` | Streamlit dashboard |
+| `scrapper.py` | Reads `data:` serial lines and writes CSV files |
+| `simulator.py` | Generates fake `data:` lines for UI testing |
+| `requirements.txt` | Python dependencies |
 
----
+## Install Dependencies
 
-# Project Structure
-
-## Core Files
-
-| File               | Description                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| `main.py`          | Unified system process manager that launches both the scrapper and dashboard simultaneously |
-| `app.py`           | Main Streamlit dashboard UI powered by Plotly                                               |
-| `scrapper.py`      | Handles telemetry parsing and CSV pipeline generation                                      |
-| `simulator.py`     | Generates randomized sensor and connectivity data for testing                               |
-| `requirements.txt` | Python dependencies required by the project                                                 |
-
----
-
-## Data Storage
-
-| Folder          | Purpose                                                      |
-| --------------- | ------------------------------------------------------------ |
-| `data/live/`    | Temporary rolling telemetry logs for real-time visualization |
-| `data/archive/` | Permanent historical telemetry backups                       |
-
----
-
-# Installation
-
-Install all required dependencies before running the system.
-
-From the parent project directory:
+Run this from the parent folder that contains `UI`:
 
 ```cmd
 python -m pip install -r UI\requirements.txt
 ```
 
-Or from inside the `UI/` folder:
+Or run this from inside the `UI` folder:
 
 ```cmd
 python -m pip install -r requirements.txt
 ```
 
----
+Recommended Python version: 3.10 or newer.
 
-# How to Use
+## Run With Simulated Data
 
-The system uses a unified execution manager through `main.py`.
-
-You only need **one terminal window** to run the entire telemetry pipeline and dashboard simultaneously.
-
-The paths are resolved from the location of the `UI` folder, so the commands work from the parent project directory or from inside `UI/`.
-
----
-
-# 1. Simulation Mode
-
-Run the complete telemetry pipeline without physical hardware.
-
-From the parent project directory:
+From the parent folder:
 
 ```cmd
 python UI\main.py simulation
 ```
 
-From inside the `UI/` folder:
+From inside `UI`:
 
 ```cmd
 python main.py simulation
 ```
 
-This launches:
+This starts the simulator, scraper, and dashboard.
 
-* the simulated telemetry generator
-* the scrapper pipeline
-* the Streamlit dashboard
+## Run With Real Receiver Hardware
 
----
+Close Arduino Serial Monitor first so Python can open the serial port.
 
-# 2. Real Hardware Mode
-
-To receive live telemetry from an ESP32 receiver connected via USB:
-
-Using the default baudrate (`115200`):
-
-From the parent project directory:
+From the parent folder:
 
 ```cmd
-python UI\main.py real COM3
+python UI\main.py real COM8
 ```
 
-From inside the `UI/` folder:
+From inside `UI`:
 
 ```cmd
-python main.py real COM3
+python main.py real COM8
 ```
 
-Using a custom baudrate:
-
-From the parent project directory:
+Replace `COM8` with your receiver port. You can also pass a custom baud rate:
 
 ```cmd
-python UI\main.py real COM3 9600
+python UI\main.py real COM8 115200
 ```
 
-From inside the `UI/` folder:
+## Open The Dashboard
 
-```cmd
-python main.py real COM3 9600
-```
-
-> Replace `COM3` with your actual serial port identifier.
->
-> Linux/macOS example:
->
-> ```bash
-> /dev/ttyUSB0
-> ```
-
----
-
-# 3. Accessing the Dashboard
-
-Once initialized, Streamlit will automatically start a local web server.
-
-Default address:
+After startup, open:
 
 ```text
 http://localhost:8501
 ```
 
-Open the URL in your browser to access:
+Stop everything with `Ctrl+C` in the terminal that started `main.py`.
 
-* Real-time thermal visualization
-* Historical temperature graphs
-* Network topology connectivity view
-* Sensor telemetry logs
+## Data Format
 
----
-
-# 4. Stopping the System
-
-To safely terminate all running processes:
+The scraper ignores normal debug logs and parses only lines containing:
 
 ```text
-CTRL + C
+data:
 ```
 
-This cleanly shuts down:
-
-* Streamlit dashboard
-* telemetry scrapper
-* simulator (if active)
-
-without leaving orphan background processes.
-
----
-
-# Data Pipeline Architecture
-
-The system implements a dual-stage storage model to separate real-time visualization from long-term archival.
-
-## Hot Storage (`data/live/`)
-
-Temporary rolling CSV logs used directly by the dashboard.
-
-Features:
-
-* limited to a rolling window of 1,000 rows
-* optimized for lightweight Streamlit rendering
-* prevents graph lag and excessive RAM usage
-* cleared through the dashboard control panel
-
----
-
-## Cold Storage (`data/archive/`)
-
-Permanent telemetry backup storage.
-
-Features:
-
-* automatic daily folder rotation
-* timestamped archival directories
-* optimized for long-term analytics and offline processing
-
----
-
-# Telemetry Format
-
-## Sensor CSV Format
-
-Each sensor log follows:
-
-```csv
-time,temp
-22:27:05,30.95
-```
-
----
-
-## Connectivity CSV Format
-
-`connectivity.csv` stores topology state vectors as JSON arrays:
-
-```csv
-time,connectivity
-22:27:05,"[1,1,1,1,1,1,1]"
-```
-
----
-
-# Connectivity Index Mapping
-
-The 7-element connectivity vector maps as follows:
+The expected payload is:
 
 ```text
-Index 0 : BME280  <--> DHT11
-Index 1 : BME280  <--> DHT22
-Index 2 : BME280  <--> DS18B20
-Index 3 : DHT11   <--> DHT22
-Index 4 : DHT11   <--> DS18B20
-Index 5 : DHT22   <--> DS18B20
-Index 6 : DS18B20 <--> RECEIVER
+[connectivity, BME280, DHT11, DHT22, DS18B20, BME280_Kalman, DHT22_Battery, DHT11_Fuzzy]
 ```
 
----
+The dashboard stores parsed values in CSV files under `data/live/` and daily
+archives under `data/archive/`. These files are local runtime data and are not
+intended to be committed to Git.
 
-# Features
+## CSV Files
 
-* Real-time thermal telemetry dashboard
-* Serial telemetry ingestion
-* Simulation environment for testing
-* Automatic CSV pipeline generation
-* PC-arrival-time timestamping for simplified live telemetry
-* Dynamic network topology visualization
-* Lightweight rolling-window storage
-* Daily archival rotation
+| File | Columns |
+| --- | --- |
+| `connectivity.csv` | `time,connectivity` |
+| `bme280.csv` | `time,temp` |
+| `dht11.csv` | `time,temp` |
+| `dht22.csv` | `time,temp` |
+| `ds18b20.csv` | `time,temp` |
+| `bme280_kalman.csv` | `time,temp` |
+| `dht22_battery.csv` | `time,battery` |
+| `dht11_fuzzy.csv` | `time,normal,waspada,siaga,bahaya` |
 
----
-
-# Technology Stack
-
-* Python
-* Streamlit
-* Plotly
-* PySerial
-* Pandas
-
----
-
-# Notes
-
-* The dashboard is optimized for local execution.
-* Recommended Python version: **3.10+**
-* Ensure the serial port is not occupied by another application before running in hardware mode.
+The firmware sends `0` as a placeholder time inside each sensor row. The Python
+scraper replaces it with the PC time when the receiver line arrives.

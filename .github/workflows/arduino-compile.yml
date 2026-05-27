@@ -73,6 +73,10 @@ jobs:
             - name: LoRa
             - name: OneWire
             - name: DallasTemperature
+            - name: DHT sensor library
+            - name: Adafruit BME280 Library
+            - name: Adafruit Unified Sensor
+            - name: Adafruit BusIO
             - name: Adafruit GFX Library
             - name: Adafruit SSD1306
           sketch-paths: |

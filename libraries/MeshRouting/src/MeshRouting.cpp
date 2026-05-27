@@ -19,7 +19,16 @@ MeshRouting::MeshRouting()
       linksDirty(true) {
   latestReading.sequence = 0;
   latestReading.temperature = 0.0f;
+  latestReading.kalmanTemperature = 0.0f;
+  latestReading.batteryPercent = 0.0f;
+  latestReading.fuzzyNormal = 0.0f;
+  latestReading.fuzzyWaspada = 0.0f;
+  latestReading.fuzzySiaga = 0.0f;
+  latestReading.fuzzyBahaya = 0.0f;
   latestReading.available = false;
+  latestReading.hasKalman = false;
+  latestReading.hasBattery = false;
+  latestReading.hasFuzzy = false;
 
   for (uint8_t i = 0; i < MAX_GRAPH_NODES; i++) {
     graph[i].used = false;
@@ -103,12 +112,73 @@ void MeshRouting::update() {
 void MeshRouting::addLocalReading(float temperature) {
   latestReading.sequence = nextReadingSequence++;
   latestReading.temperature = roundf(temperature * 10.0f) / 10.0f;
+  latestReading.hasKalman = false;
+  latestReading.hasBattery = false;
+  latestReading.hasFuzzy = false;
   latestReading.available = true;
 
   Serial.printf("Updated %s latest reading #%lu: %.1f C\n",
                 localName,
                 (unsigned long)latestReading.sequence,
                 latestReading.temperature);
+}
+
+void MeshRouting::addLocalReadingWithKalman(float temperature, float kalmanTemperature) {
+  latestReading.sequence = nextReadingSequence++;
+  latestReading.temperature = roundf(temperature * 10.0f) / 10.0f;
+  latestReading.kalmanTemperature = roundf(kalmanTemperature * 10.0f) / 10.0f;
+  latestReading.hasKalman = true;
+  latestReading.hasBattery = false;
+  latestReading.hasFuzzy = false;
+  latestReading.available = true;
+
+  Serial.printf("Updated %s latest reading #%lu: %.1f C, kalman %.1f C\n",
+                localName,
+                (unsigned long)latestReading.sequence,
+                latestReading.temperature,
+                latestReading.kalmanTemperature);
+}
+
+void MeshRouting::addLocalReadingWithBattery(float temperature, float batteryPercent) {
+  latestReading.sequence = nextReadingSequence++;
+  latestReading.temperature = roundf(temperature * 10.0f) / 10.0f;
+  latestReading.batteryPercent = constrain(roundf(batteryPercent * 10.0f) / 10.0f, 0.0f, 100.0f);
+  latestReading.hasKalman = false;
+  latestReading.hasBattery = true;
+  latestReading.hasFuzzy = false;
+  latestReading.available = true;
+
+  Serial.printf("Updated %s latest reading #%lu: %.1f C, battery %.1f%%\n",
+                localName,
+                (unsigned long)latestReading.sequence,
+                latestReading.temperature,
+                latestReading.batteryPercent);
+}
+
+void MeshRouting::addLocalReadingWithFuzzy(float temperature,
+                                           float normal,
+                                           float waspada,
+                                           float siaga,
+                                           float bahaya) {
+  latestReading.sequence = nextReadingSequence++;
+  latestReading.temperature = roundf(temperature * 10.0f) / 10.0f;
+  latestReading.fuzzyNormal = constrain(roundf(normal * 1000.0f) / 1000.0f, 0.0f, 1.0f);
+  latestReading.fuzzyWaspada = constrain(roundf(waspada * 1000.0f) / 1000.0f, 0.0f, 1.0f);
+  latestReading.fuzzySiaga = constrain(roundf(siaga * 1000.0f) / 1000.0f, 0.0f, 1.0f);
+  latestReading.fuzzyBahaya = constrain(roundf(bahaya * 1000.0f) / 1000.0f, 0.0f, 1.0f);
+  latestReading.hasKalman = false;
+  latestReading.hasBattery = false;
+  latestReading.hasFuzzy = true;
+  latestReading.available = true;
+
+  Serial.printf("Updated %s latest reading #%lu: %.1f C, fuzzy N %.2f W %.2f S %.2f B %.2f\n",
+                localName,
+                (unsigned long)latestReading.sequence,
+                latestReading.temperature,
+                latestReading.fuzzyNormal,
+                latestReading.fuzzyWaspada,
+                latestReading.fuzzySiaga,
+                latestReading.fuzzyBahaya);
 }
 
 void MeshRouting::handleMessage(uint32_t from, const String &msg) {
@@ -517,12 +587,25 @@ bool MeshRouting::buildDataPacket(String &packet) {
     return false;
   }
 
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<640> doc;
   doc["t"] = "DATA";
   doc["src"] = meshDebug->getNodeId();
   doc["name"] = localName;
   doc["seq"] = latestReading.sequence;
   doc["temp"] = latestReading.temperature;
+  if (latestReading.hasKalman) {
+    doc["kalman"] = latestReading.kalmanTemperature;
+  }
+  if (latestReading.hasBattery) {
+    doc["battery"] = latestReading.batteryPercent;
+  }
+  if (latestReading.hasFuzzy) {
+    JsonArray fuzzy = doc.createNestedArray("fuzzy");
+    fuzzy.add(latestReading.fuzzyNormal);
+    fuzzy.add(latestReading.fuzzyWaspada);
+    fuzzy.add(latestReading.fuzzySiaga);
+    fuzzy.add(latestReading.fuzzyBahaya);
+  }
 
   serializeJson(doc, packet);
   return true;

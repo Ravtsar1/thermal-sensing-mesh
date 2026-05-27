@@ -1,176 +1,134 @@
 # Thermal Sensing Mesh
 
-Note: this `simplified` branch is under active development and may be unstable.
+This is the simulated-temperature branch of Thermal Sensing Mesh.
 
-Thermal Sensing Mesh is an ESP32 temperature sensing network that combines a
-WiFi mesh with a LoRa uplink. The mesh sensors keep only their newest
-temperature value, discover whether the LoRa gateway is reachable, and send one
-live value per cycle instead of storing timestamped history.
+Thermal Sensing Mesh is an ESP32 monitoring network for distributed temperature
+nodes. Several ESP32 boards form a WiFi mesh so nearby nodes can pass data
+through each other, and one DS18B20 gateway forwards the newest readings to a
+separate LoRa receiver. The receiver prints a filterable `data:` line for the
+Python UI dashboard.
 
-This branch also prepares receiver Serial output for a separate
-user interface. The LoRa receiver keeps its existing debug prints, but it also
-prints one filterable line beginning with `data:` for both connected and
-disconnected UI states.
+This `main` branch is intended for testing the full network without wiring real
+BME280, DHT11, or DHT22 sensors. Those three nodes simulate their readings while
+using the same mesh routing and UI data format as the real-temperature branch.
 
-The current firmware uses five ESP32 roles:
+For real measured BME280, DHT11, and DHT22 firmware, use the
+`real-temperature` branch.
 
-| Folder                   | Role                                            | Sensor behavior              |
-| ------------------------ | ----------------------------------------------- | ---------------------------- |
-| `ESP_Mesh_DHT11DataSim`  | Mesh sensor node                                | Simulated DHT11 temperature  |
-| `ESP_Mesh_DHT22DataSim`  | Mesh sensor node                                | Simulated DHT22 temperature  |
-| `ESP_Mesh_BME280DataSim` | Mesh sensor node                                | Simulated BME280 temperature |
-| `ESP_Mesh_DS18B20_Lora`  | Mesh gateway + LoRa transmitter                 | Real DS18B20 temperature     |
-| `ESP_LoraReceiver`       | LoRa receiver + OLED display + UI Serial output | Receives gateway packets     |
+## Firmware Roles
 
-## How The Mesh Works
+Upload one firmware role to each ESP32:
 
-Each mesh ESP32 uses two shared code modules from this repository: `MeshDebug`
-and `MeshRouting`.
+| Folder | Role | Data produced |
+| --- | --- | --- |
+| `ESP_Mesh_BME280DataSim` | Simulated BME280 mesh node | Simulated temperature and Kalman-filtered temperature |
+| `ESP_Mesh_DHT11DataSim` | Simulated DHT11 mesh node | Simulated temperature and fuzzy status |
+| `ESP_Mesh_DHT22DataSim` | Simulated DHT22 mesh node | Simulated temperature and battery percentage |
+| `ESP_Mesh_DS18B20_Lora` | DS18B20 mesh gateway and LoRa transmitter | Real DS18B20 temperature, forwarded mesh data, connectivity |
+| `ESP_LoraReceiver` | LoRa receiver, OLED display, and PC serial bridge | UI serial output and receiver ACKs |
 
-`MeshDebug` is a small wrapper around painlessMesh. It starts the mesh, keeps
-callbacks consistent, sends JSON packets, and lists direct and known mesh nodes.
+The DS18B20 gateway still reads a real DS18B20 sensor because it also owns the
+LoRa transmitter role in this hardware setup.
 
-`MeshRouting` is the project protocol layer:
+## How The Network Works
 
-1. Every sensor keeps only its latest temperature reading.
-2. Each node periodically broadcasts a lightweight `LINKS` packet with its
-   connectivity data.
-3. The DS18B20 gateway broadcasts `GW` beacons so other nodes can learn the
-   gateway node ID.
-4. The gateway learns the mesh connectivity graph from `LINKS` packets and the
-   painlessMesh layout data inside those packets.
-5. When a sensor can reach the gateway, it creates a `DATA` packet containing
-   only source ID, sensor name, reading sequence, and temperature.
-6. painlessMesh handles the real multi-hop forwarding to the gateway.
-7. The gateway converts the mesh `DATA` packet into a LoRa `TEMP` packet.
-8. The LoRa `TEMP` packet includes one live temperature value and a seven-value
-   connectivity array for the UI.
-9. The LoRa receiver displays the newest value per sensor, prints the `data:`
-   UI line, and sends a LoRa `ACK`.
-10. When the gateway receives a mesh `DATA` packet, it sends a mesh `DATA_ACK`
-    back to the source sensor as a gateway-path connectivity signal. The LoRa
-    `ACK` remains a separate gateway-to-receiver link signal. Neither ACK
-    deletes history because this branch has no history buffer.
+The simulated sensor nodes join the same painlessMesh network as the gateway.
+Every node periodically broadcasts lightweight connectivity reports. The
+DS18B20 gateway advertises itself with `GW` beacons, learns the mesh topology,
+and forwards live sensor packets to the LoRa receiver.
 
-If a sensor is disconnected, its newest local value may be overwritten by the
-next cycle before it is delivered. This is intentional: the simplified branch
-prioritizes live telemetry and clean UI timing over historical backfill.
+Sensor nodes keep only the newest value. They do not store history and they do
+not send batches. This keeps the UI timing simple: the PC treats each value as
+arriving "now" when the receiver prints it.
+
+The shared mesh logic lives in:
+
+- `libraries/MeshDebug`
+- `libraries/MeshRouting`
+
+`MeshDebug` wraps painlessMesh setup, message sending, callbacks, and optional
+transport debug prints. `MeshRouting` handles connectivity reports, gateway
+beacons, route selection, live-value packets, and gateway-path ACKs.
 
 ## UI Serial Output
 
-The UI should read the Serial Monitor from `ESP_LoraReceiver` at `115200` baud
-and filter lines that start with:
+Open the receiver serial port at `115200` baud. The receiver keeps debug prints
+such as `LoRa in` and `LoRa ACK out`, but the UI should parse only lines that
+start with:
 
 ```text
 data:
 ```
 
-The line after `data:` is a JSON-style array:
+The payload shape is:
 
 ```text
-data: [connectivity, BME280, DHT11, DHT22, DS18B20]
+data: [connectivity, BME280, DHT11, DHT22, DS18B20, BME280_Kalman, DHT22_Battery, DHT11_Fuzzy]
 ```
 
 Example:
 
 ```text
-data: [[1,0,1,0,1,0,1],[],[[0,26.9]],[],[]]
+data: [[1,0,1,0,1,0,1],[],[[0,26.9]],[],[],[],[],[[0,0.42,0.58,0,0]]]
 ```
 
-The first array contains seven boolean values represented as `1` or `0`:
+The first array has seven boolean values represented as `1` or `0`:
 
-| Index | Meaning                                    |
-| ----- | ------------------------------------------ |
-| `0`   | BME280 connected to DHT11                  |
-| `1`   | BME280 connected to DHT22                  |
-| `2`   | BME280 connected to DS18B20 gateway        |
-| `3`   | DHT11 connected to DHT22                   |
-| `4`   | DHT11 connected to DS18B20 gateway         |
-| `5`   | DHT22 connected to DS18B20 gateway         |
-| `6`   | DS18B20 gateway connected to LoRa receiver |
+| Index | Meaning |
+| --- | --- |
+| `0` | BME280 connected to DHT11 |
+| `1` | BME280 connected to DHT22 |
+| `2` | BME280 connected to DS18B20 gateway |
+| `3` | DHT11 connected to DHT22 |
+| `4` | DHT11 connected to DS18B20 gateway |
+| `5` | DHT22 connected to DS18B20 gateway |
+| `6` | DS18B20 gateway connected to LoRa receiver |
 
-Each temperature array contains at most one row in this format:
+Each temperature-like array contains at most one row:
 
 ```text
-[0, temperatureC]
+[0, value]
 ```
 
-The `0` is a placeholder. The UI scraper assigns the actual chart time from
-the PC time when the Serial line arrives. The receiver prints one `data:` line
-for each LoRa `TEMP` packet it receives, so the matching sensor array is filled
-and the other sensor arrays are usually empty.
+The first `0` is only a placeholder. The UI replaces it with the PC arrival
+time. `BME280_Kalman` uses the same shape as temperature. `DHT22_Battery` uses
+the second value as battery percentage from `0` to `100`.
 
-If the receiver has no fresh LoRa value, it periodically prints this disconnected
-UI state:
+`DHT11_Fuzzy` contains one row:
 
 ```text
-data: [[0,0,0,0,0,0,0],[],[],[],[]]
+[0, normal, waspada, siaga, bahaya]
 ```
 
-Other Serial prints such as `LoRa in`, `LoRa ACK out`, and packet summaries are
-kept for debugging. UI code should ignore those lines and only parse lines that
-begin with `data:`.
+If the receiver has no fresh LoRa value, it periodically prints:
 
-## Timing Intervals
+```text
+data: [[0,0,0,0,0,0,0],[],[],[],[],[],[],[]]
+```
 
-### Temperature
+## Timing Defaults
 
 | Behavior | Default interval |
 | --- | --- |
-| DHT11 simulated temperature reading | `2500 ms` |
-| DHT22 simulated temperature reading | `2500 ms` |
-| BME280 simulated temperature reading | `2500 ms` |
-| DS18B20 real temperature reading | `2500 ms` |
-
-### Mesh Routing
-
-| Behavior | Default interval |
-| --- | --- |
-| `LINKS` connectivity report | `1000 ms` |
-| Initial `LINKS` startup jitter | `0-150 ms` |
-| Learned link freshness timeout | `3500 ms` |
+| Simulated BME280 temperature and Kalman update | `2500 ms` |
+| Simulated DHT11 temperature and fuzzy update | `2500 ms` |
+| Simulated DHT22 temperature and battery update after wake | `2500 ms` |
+| Simulated DHT22 awake window after reading | `5000 ms` |
+| Simulated DHT22 fast adaptive sleep | `10000 ms` |
+| Simulated DHT22 moderate adaptive sleep | `30000 ms` |
+| Simulated DHT22 stable adaptive sleep | `120000 ms` |
+| DS18B20 gateway temperature update | `2500 ms` |
+| Mesh connectivity `LINKS` report | `1000 ms` |
 | DS18B20 gateway `GW` beacon | `1000 ms` |
-| Learned gateway freshness timeout | `6000 ms` |
-| Latest value send retry after failed route | `1000 ms` |
-| Station reconnect nudge while gateway route is missing | `3000 ms` |
-
-Connectivity reports are also triggered after painlessMesh reports a topology
-change, so a node may publish `LINKS` earlier than the normal 1 second period.
-The DS18B20 gateway is also marked as the painlessMesh root. If a sensor knows
-the gateway ID but loses the route after a relay is turned off, it asks its WiFi
-station side to reconnect so painlessMesh can search for a new path sooner.
-
-### Gateway And LoRa Receiver
-
-| Behavior | Default interval |
-| --- | --- |
-| Remote mesh sensor LED freshness on gateway | `6000 ms` |
-| LoRa receiver ACK freshness on gateway | `10000 ms` |
-| Gateway wait time for LoRa ACK after sending | `450 ms` |
-| Gateway LoRa module retry after init failure | `5000 ms` |
+| Gateway route reconnect nudge | `3000 ms` |
+| Gateway wait for LoRa ACK | `450 ms` |
+| Receiver disconnected UI `data:` print | `1000 ms` |
 | Receiver OLED refresh | `500 ms` |
-| Receiver packet freshness timeout | `10000 ms` |
-| Receiver LoRa module retry after init failure | `5000 ms` |
-| Receiver disconnected UI `data:` line | `1000 ms` |
 
-## Requirements
+## Arduino Requirements
 
-### Hardware
-
-- 5 ESP32 boards
-- 2 SX127x-style LoRa modules, one for gateway and one for receiver
-- 1 DS18B20 temperature sensor
-- 1 SSD1306 OLED display for the receiver
-- LEDs and resistors for gateway status indicators
-- External 4.7k pull-up resistor from DS18B20 data to 3.3V
-
-### Arduino IDE Board Support
-
-- ESP32 board package for Arduino IDE
-
-### Arduino Libraries
-
-Install these from Arduino IDE Library Manager:
+Install the ESP32 board package in Arduino IDE, then install these libraries
+from Library Manager:
 
 - `painlessMesh`
 - `AsyncTCP`
@@ -179,137 +137,96 @@ Install these from Arduino IDE Library Manager:
 - `LoRa`
 - `OneWire`
 - `DallasTemperature`
+- `DHT sensor library`
+- `Adafruit BME280 Library`
+- `Adafruit Unified Sensor`
+- `Adafruit BusIO`
 - `Adafruit GFX Library`
 - `Adafruit SSD1306`
 
-This project also includes two shared local code folders:
-
-- `MeshDebug`, located at `libraries/MeshDebug`
-- `MeshRouting`, located at `libraries/MeshRouting`
-
-`MeshDebug` contains the painlessMesh wrapper. `MeshRouting` contains the
-connectivity, live-value delivery, ACK, and UI-connectivity protocol.
+The repository also contains local shared code in `libraries/MeshDebug` and
+`libraries/MeshRouting`. The sketches include those files by relative path, so
+keep the folder structure unchanged when opening sketches in Arduino IDE.
 
 ## Arduino IDE Setup
 
-Each main sketch folder contains a committed `Config.h` and a matching
-`Config.example.h`.
+Each sketch folder contains a committed `Config.h`. Some folders also include a
+`Config.example.h` reference template.
 
-The mesh sketches currently refer to `MeshDebug` and `MeshRouting` by relative
-path. Keep the repository folder structure unchanged and open the sketches from
-inside this project folder:
+1. Open the `.ino` file from one sketch folder in Arduino IDE.
+2. Edit `Config.h` if your pins, mesh password, LoRa frequency, or timing values
+   are different.
+3. Keep `MESH_PREFIX`, `MESH_PASSWORD`, and `MESH_PORT` identical on all mesh
+   nodes.
+4. Keep `LORA_FREQUENCY` and `LORA_SYNC_WORD` identical on
+   `ESP_Mesh_DS18B20_Lora` and `ESP_LoraReceiver`.
+5. Upload one role to each ESP32.
+6. Open Serial Monitor at `115200` baud.
 
-```cpp
-#include "../libraries/MeshDebug/src/MeshDebug.h"
-#include "../libraries/MeshRouting/src/MeshRouting.h"
+## UI Dashboard
+
+The UI is in the `UI` folder and is shared by both branches. It can run in
+simulation mode or read the real receiver serial port.
+
+Install dependencies from the project folder:
+
+```cmd
+python -m pip install -r UI\requirements.txt
 ```
 
-The matching `.cpp` files are also included by relative path in the mesh
-sketches. This keeps Arduino IDE usable without separately installing
-`MeshDebug` and `MeshRouting` as libraries.
+Run the UI with simulated serial data:
 
-Short note: this relative-path setup may change in the future if `MeshDebug`
-and `MeshRouting` are packaged as proper Arduino libraries.
+```cmd
+python UI\main.py simulation
+```
 
-Compile/upload normally:
+Run the UI with a receiver on `COM8`:
 
-1. Open one sketch folder, for example
-   `ESP_Mesh_DHT11DataSim/ESP_Mesh_DHT11DataSim.ino`.
-2. Arduino IDE should show `Config.h` as another tab.
-3. Edit `Config.h` before uploading if your mesh password, LoRa frequency,
-   pins, or timing intervals are different.
-4. Keep `MESH_PREFIX`, `MESH_PASSWORD`, and `MESH_PORT` the same on all mesh
-   nodes.
-5. Keep `LORA_FREQUENCY` and `LORA_SYNC_WORD` the same on
-   `ESP_Mesh_DS18B20_Lora` and `ESP_LoraReceiver`.
-6. Click Verify or Upload as usual.
+```cmd
+python UI\main.py real COM8
+```
 
-`Config.example.h` is only a clean reference template. The sketches include
-`Config.h`.
+Then open:
 
-## Upload Guide
+```text
+http://localhost:8501
+```
 
-Upload one firmware role to each ESP32:
-
-1. `ESP_Mesh_DS18B20_Lora` to the DS18B20 + LoRa gateway ESP32.
-2. `ESP_LoraReceiver` to the OLED + LoRa receiver ESP32.
-3. `ESP_Mesh_DHT11DataSim` to the DHT11 simulated node ESP32.
-4. `ESP_Mesh_DHT22DataSim` to the DHT22 simulated node ESP32.
-5. `ESP_Mesh_BME280DataSim` to the BME280 simulated node ESP32.
-
-Open Serial Monitor at `115200` baud. Mesh sketches also support the debug
-toggle described below.
+More UI details are in `UI/README.md`.
 
 ## Serial Debug Toggle
 
-The four mesh sketches read simple commands from Serial Monitor:
+Mesh sketches accept simple Serial Monitor commands:
 
 - Send `1` to enable verbose `MeshDebug` output.
 - Send `0` to disable verbose `MeshDebug` output.
 
-This feature is available in:
-
-- `ESP_Mesh_DHT11DataSim`
-- `ESP_Mesh_DHT22DataSim`
-- `ESP_Mesh_BME280DataSim`
-- `ESP_Mesh_DS18B20_Lora`
-
-The LoRa receiver sketch does not implement this toggle.
-
-When enabled, `MeshDebug` prints extra transport-level mesh information such as
-mesh startup, JSON broadcasts, single-node sends, incoming mesh messages, new
-mesh nodes, connection changes, and painlessMesh internal time adjustments.
-
-When disabled, those `MeshDebug` messages are hidden. It does not stop the
-program, disable the mesh, change routing behavior, or turn off every Serial
-message. Sensor readings, routing logs, gateway logs, LoRa logs,
-receiver logs, and UI `data:` lines may still print because they are produced
-outside `MeshDebug`.
-
-The simulated DHT11, DHT22, and BME280 mesh nodes start with verbose
-`MeshDebug` output enabled. The DS18B20 gateway starts with it disabled to keep
-the gateway Serial output quieter.
+This changes only the extra mesh transport debug prints. Sensor logs, routing
+logs, gateway logs, LoRa logs, receiver logs, and UI `data:` lines may still be
+printed by other parts of the program.
 
 ## Radio Frequency Note
 
-The default LoRa frequency in `Config.h` is `433175000L` or 433.175 MHz. This
-was chosen as a public default inside the commonly referenced Indonesian
-433.05-434.79 MHz SRD/LPWAN range, but you must still verify current local
-rules, output power, antenna gain, duty cycle, and module certification before
-transmitting.
+The public default LoRa frequency is `433175000L` or 433.175 MHz. Verify the
+current radio rules, output power, antenna gain, duty cycle, and module
+certification requirements for your location before transmitting.
 
-Regulation references can change. Start from the current official Indonesian
-rules, such as [Permenkominfo No. 2 Tahun 2025 on peraturan.go.id](https://www.peraturan.go.id/files/permenkominfo-no-2-tahun-2025.pdf).
+For Indonesia, start from the current official rules, such as
+[Permenkominfo No. 2 Tahun 2025](https://www.peraturan.go.id/files/permenkominfo-no-2-tahun-2025.pdf).
 
 ## Project Layout
 
 ```text
 Thermal Sensing Mesh/
+  ESP_Mesh_BME280DataSim/     Simulated BME280 mesh node
   ESP_Mesh_DHT11DataSim/      Simulated DHT11 mesh node
   ESP_Mesh_DHT22DataSim/      Simulated DHT22 mesh node
-  ESP_Mesh_BME280DataSim/     Simulated BME280 mesh node
   ESP_Mesh_DS18B20_Lora/      DS18B20 mesh gateway and LoRa transmitter
-  ESP_LoraReceiver/           LoRa receiver, OLED display, and UI Serial output
+  ESP_LoraReceiver/           LoRa receiver, OLED display, and UI serial output
   libraries/MeshDebug/        Shared mesh debug/transport code
-  libraries/MeshRouting/      Shared mesh routing/live-value code
+  libraries/MeshRouting/      Shared mesh routing/live-value protocol
+  UI/                         Streamlit dashboard and serial scraper
 ```
-
-## GitHub Compile Check
-
-This repo includes a GitHub Actions compile check for the main ESP32 sketches.
-It only checks whether the firmware builds; it does not upload to hardware or
-change firmware behavior.
-
-## Current Limitations
-
-- DHT11, DHT22, and BME280 are simulated in the main mesh sketches.
-- DS18B20 is the only real temperature sensor in the current gateway sketch.
-- Sensor nodes keep only the newest temperature value, so disconnected readings
-  are overwritten instead of backfilled later.
-- The receiver `data:` line represents the LoRa value that just arrived. It is
-  not a database of every past reading from every sensor.
-- The mesh sketches depend on the repository folder structure because
-  `MeshDebug` and `MeshRouting` are included by relative path.
 
 ## License
 

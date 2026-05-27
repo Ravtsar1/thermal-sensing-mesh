@@ -34,6 +34,13 @@ public:
 
   // Store the newest local reading. Any older unsent reading is overwritten.
   void addLocalReading(float temperature);
+  void addLocalReadingWithKalman(float temperature, float kalmanTemperature);
+  void addLocalReadingWithBattery(float temperature, float batteryPercent);
+  void addLocalReadingWithFuzzy(float temperature,
+                                float normal,
+                                float waspada,
+                                float siaga,
+                                float bahaya);
 
   // Only the gateway sketch sets this; it forwards DATA packets to LoRa.
   void setGatewaySender(GatewayDataSender sender);
@@ -69,7 +76,16 @@ private:
   struct LatestReading {
     uint32_t sequence;
     float temperature;
+    float kalmanTemperature;
+    float batteryPercent;
+    float fuzzyNormal;
+    float fuzzyWaspada;
+    float fuzzySiaga;
+    float fuzzyBahaya;
     bool available;
+    bool hasKalman;
+    bool hasBattery;
+    bool hasFuzzy;
   };
 
   MeshDebug *meshDebug;

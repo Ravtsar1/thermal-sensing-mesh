@@ -169,7 +169,7 @@ bool sendDataOverLora(const String &meshPacket) {
     return false;
   }
 
-  StaticJsonDocument<384> sourceDoc;
+  StaticJsonDocument<640> sourceDoc;
   DeserializationError error = deserializeJson(sourceDoc, meshPacket);
   if (error) {
     Serial.println("Gateway packet ignored: invalid DATA JSON");
@@ -184,7 +184,7 @@ bool sendDataOverLora(const String &meshPacket) {
   uint32_t sequence = ++loraSequence;
   const char *sensorName = sourceDoc["name"] | "unknown";
 
-  StaticJsonDocument<512> loraDoc;
+  StaticJsonDocument<768> loraDoc;
   // Keep LoRa packet fields short because LoRa airtime is expensive.
   loraDoc["t"] = "TEMP";
   loraDoc["s"] = sequence;
@@ -192,6 +192,19 @@ bool sendDataOverLora(const String &meshPacket) {
   loraDoc["name"] = sensorName;
   loraDoc["seq"] = sourceDoc["seq"].as<uint32_t>();
   loraDoc["temp"] = sourceDoc["temp"].as<float>();
+  if (!sourceDoc["kalman"].isNull()) {
+    loraDoc["kalman"] = sourceDoc["kalman"].as<float>();
+  }
+  if (!sourceDoc["battery"].isNull()) {
+    loraDoc["battery"] = sourceDoc["battery"].as<float>();
+  }
+  if (!sourceDoc["fuzzy"].isNull()) {
+    JsonArray sourceFuzzy = sourceDoc["fuzzy"].as<JsonArray>();
+    JsonArray fuzzy = loraDoc.createNestedArray("fuzzy");
+    for (JsonVariant value : sourceFuzzy) {
+      fuzzy.add(value.as<float>());
+    }
+  }
 
   // UI connectivity order:
   // [BME280-DHT11, BME280-DHT22, BME280-DS18B20,
@@ -245,7 +258,7 @@ void readDs18b20() {
 
 void handleMeshMessage(uint32_t from, const String &msg) {
   // Receives DATA packets from other mesh nodes and gateway/link beacons.
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<768> doc;
   DeserializationError error = deserializeJson(doc, msg);
   if (!error) {
     const char *type = doc["t"] | "";
@@ -295,6 +308,9 @@ void setup() {
   updateLeds();
 
   ds18b20.begin();
+  // 12-bit DS18B20 resolution gives 0.0625 C raw steps. The mesh still rounds
+  // the transmitted value to one decimal place for compact packets.
+  ds18b20.setResolution(12);
 
   meshDebug.setDebug(false);
   // The gateway is the painlessMesh root, so other nodes restructure toward it
