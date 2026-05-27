@@ -34,7 +34,7 @@ flow.
 filtered temperature value, and sends both values through the mesh.
 
 `ESP_Mesh_DHT11` reads DHT11 temperature, calculates fuzzy membership values for
-`normal`, `waspada`, `siaga`, and `bahaya`, and sends temperature plus fuzzy
+`normal`, `caution`, `warning`, and `danger`, and sends temperature plus fuzzy
 status through the mesh. Its local OLED, SD logging, LED, buzzer, and battery
 display behavior remain local node features.
 
@@ -110,7 +110,7 @@ the second value as battery percentage from `0` to `100`.
 `DHT11_Fuzzy` contains one row:
 
 ```text
-[0, normal, waspada, siaga, bahaya]
+[0, normal, caution, warning, danger]
 ```
 
 If the receiver has no fresh LoRa value, it periodically prints:

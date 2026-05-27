@@ -22,9 +22,9 @@ MeshRouting::MeshRouting()
   latestReading.kalmanTemperature = 0.0f;
   latestReading.batteryPercent = 0.0f;
   latestReading.fuzzyNormal = 0.0f;
-  latestReading.fuzzyWaspada = 0.0f;
-  latestReading.fuzzySiaga = 0.0f;
-  latestReading.fuzzyBahaya = 0.0f;
+  latestReading.fuzzyCaution = 0.0f;
+  latestReading.fuzzyWarning = 0.0f;
+  latestReading.fuzzyDanger = 0.0f;
   latestReading.available = false;
   latestReading.hasKalman = false;
   latestReading.hasBattery = false;
@@ -157,28 +157,28 @@ void MeshRouting::addLocalReadingWithBattery(float temperature, float batteryPer
 
 void MeshRouting::addLocalReadingWithFuzzy(float temperature,
                                            float normal,
-                                           float waspada,
-                                           float siaga,
-                                           float bahaya) {
+                                           float caution,
+                                           float warning,
+                                           float danger) {
   latestReading.sequence = nextReadingSequence++;
   latestReading.temperature = roundf(temperature * 10.0f) / 10.0f;
   latestReading.fuzzyNormal = constrain(roundf(normal * 1000.0f) / 1000.0f, 0.0f, 1.0f);
-  latestReading.fuzzyWaspada = constrain(roundf(waspada * 1000.0f) / 1000.0f, 0.0f, 1.0f);
-  latestReading.fuzzySiaga = constrain(roundf(siaga * 1000.0f) / 1000.0f, 0.0f, 1.0f);
-  latestReading.fuzzyBahaya = constrain(roundf(bahaya * 1000.0f) / 1000.0f, 0.0f, 1.0f);
+  latestReading.fuzzyCaution = constrain(roundf(caution * 1000.0f) / 1000.0f, 0.0f, 1.0f);
+  latestReading.fuzzyWarning = constrain(roundf(warning * 1000.0f) / 1000.0f, 0.0f, 1.0f);
+  latestReading.fuzzyDanger = constrain(roundf(danger * 1000.0f) / 1000.0f, 0.0f, 1.0f);
   latestReading.hasKalman = false;
   latestReading.hasBattery = false;
   latestReading.hasFuzzy = true;
   latestReading.available = true;
 
-  Serial.printf("Updated %s latest reading #%lu: %.1f C, fuzzy N %.2f W %.2f S %.2f B %.2f\n",
+  Serial.printf("Updated %s latest reading #%lu: %.1f C, fuzzy normal %.2f caution %.2f warning %.2f danger %.2f\n",
                 localName,
                 (unsigned long)latestReading.sequence,
                 latestReading.temperature,
                 latestReading.fuzzyNormal,
-                latestReading.fuzzyWaspada,
-                latestReading.fuzzySiaga,
-                latestReading.fuzzyBahaya);
+                latestReading.fuzzyCaution,
+                latestReading.fuzzyWarning,
+                latestReading.fuzzyDanger);
 }
 
 void MeshRouting::handleMessage(uint32_t from, const String &msg) {
@@ -602,9 +602,9 @@ bool MeshRouting::buildDataPacket(String &packet) {
   if (latestReading.hasFuzzy) {
     JsonArray fuzzy = doc.createNestedArray("fuzzy");
     fuzzy.add(latestReading.fuzzyNormal);
-    fuzzy.add(latestReading.fuzzyWaspada);
-    fuzzy.add(latestReading.fuzzySiaga);
-    fuzzy.add(latestReading.fuzzyBahaya);
+    fuzzy.add(latestReading.fuzzyCaution);
+    fuzzy.add(latestReading.fuzzyWarning);
+    fuzzy.add(latestReading.fuzzyDanger);
   }
 
   serializeJson(doc, packet);

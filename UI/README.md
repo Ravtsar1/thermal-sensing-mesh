@@ -107,7 +107,7 @@ intended to be committed to Git.
 | `ds18b20.csv` | `time,temp` |
 | `bme280_kalman.csv` | `time,temp` |
 | `dht22_battery.csv` | `time,battery` |
-| `dht11_fuzzy.csv` | `time,normal,waspada,siaga,bahaya` |
+| `dht11_fuzzy.csv` | `time,normal,caution,warning,danger` |
 
 The firmware sends `0` as a placeholder time inside each sensor row. The Python
 scraper replaces it with the PC time when the receiver line arrives.

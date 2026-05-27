@@ -43,31 +43,31 @@ def calculate_dht11_fuzzy(temperature):
         normal = 0.0
 
     if temperature <= 20.0 or temperature >= 37.0:
-        waspada = 0.0
+        caution = 0.0
     elif temperature <= 32.0:
-        waspada = (temperature - 20.0) / 12.0
+        caution = (temperature - 20.0) / 12.0
     else:
-        waspada = (37.0 - temperature) / 5.0
+        caution = (37.0 - temperature) / 5.0
 
     if temperature <= 32.0 or temperature >= 39.0:
-        siaga = 0.0
+        warning = 0.0
     elif temperature <= 37.0:
-        siaga = (temperature - 32.0) / 5.0
+        warning = (temperature - 32.0) / 5.0
     else:
-        siaga = (39.0 - temperature) / 2.0
+        warning = (39.0 - temperature) / 2.0
 
     if temperature <= 37.0:
-        bahaya = 0.0
+        danger = 0.0
     elif temperature <= 39.0:
-        bahaya = (temperature - 37.0) / 2.0
+        danger = (temperature - 37.0) / 2.0
     else:
-        bahaya = 1.0
+        danger = 1.0
 
     return [
         round(max(0.0, min(1.0, normal)), 3),
-        round(max(0.0, min(1.0, waspada)), 3),
-        round(max(0.0, min(1.0, siaga)), 3),
-        round(max(0.0, min(1.0, bahaya)), 3),
+        round(max(0.0, min(1.0, caution)), 3),
+        round(max(0.0, min(1.0, warning)), 3),
+        round(max(0.0, min(1.0, danger)), 3),
     ]
 
 

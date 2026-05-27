@@ -15,9 +15,9 @@
 
 struct FuzzyStatus {
   float normal;
-  float waspada;
-  float siaga;
-  float bahaya;
+  float caution;
+  float warning;
+  float danger;
   const char *label;
 };
 
@@ -83,46 +83,46 @@ FuzzyStatus calculateFuzzyStatus(float temperature) {
   }
 
   if (temperature <= 20.0f || temperature >= 37.0f) {
-    fuzzy.waspada = 0.0f;
+    fuzzy.caution = 0.0f;
   } else if (temperature <= 32.0f) {
-    fuzzy.waspada = (temperature - 20.0f) / 12.0f;
+    fuzzy.caution = (temperature - 20.0f) / 12.0f;
   } else {
-    fuzzy.waspada = (37.0f - temperature) / 5.0f;
+    fuzzy.caution = (37.0f - temperature) / 5.0f;
   }
 
   if (temperature <= 32.0f || temperature >= 39.0f) {
-    fuzzy.siaga = 0.0f;
+    fuzzy.warning = 0.0f;
   } else if (temperature <= 37.0f) {
-    fuzzy.siaga = (temperature - 32.0f) / 5.0f;
+    fuzzy.warning = (temperature - 32.0f) / 5.0f;
   } else {
-    fuzzy.siaga = (39.0f - temperature) / 2.0f;
+    fuzzy.warning = (39.0f - temperature) / 2.0f;
   }
 
   if (temperature <= 37.0f) {
-    fuzzy.bahaya = 0.0f;
+    fuzzy.danger = 0.0f;
   } else if (temperature <= 39.0f) {
-    fuzzy.bahaya = (temperature - 37.0f) / 2.0f;
+    fuzzy.danger = (temperature - 37.0f) / 2.0f;
   } else {
-    fuzzy.bahaya = 1.0f;
+    fuzzy.danger = 1.0f;
   }
 
   fuzzy.normal = roundThree(clampFraction(fuzzy.normal));
-  fuzzy.waspada = roundThree(clampFraction(fuzzy.waspada));
-  fuzzy.siaga = roundThree(clampFraction(fuzzy.siaga));
-  fuzzy.bahaya = roundThree(clampFraction(fuzzy.bahaya));
+  fuzzy.caution = roundThree(clampFraction(fuzzy.caution));
+  fuzzy.warning = roundThree(clampFraction(fuzzy.warning));
+  fuzzy.danger = roundThree(clampFraction(fuzzy.danger));
 
   fuzzy.label = "NORMAL";
   float maxValue = fuzzy.normal;
-  if (fuzzy.waspada > maxValue) {
-    maxValue = fuzzy.waspada;
-    fuzzy.label = "WASPADA";
+  if (fuzzy.caution > maxValue) {
+    maxValue = fuzzy.caution;
+    fuzzy.label = "CAUTION";
   }
-  if (fuzzy.siaga > maxValue) {
-    maxValue = fuzzy.siaga;
-    fuzzy.label = "SIAGA";
+  if (fuzzy.warning > maxValue) {
+    maxValue = fuzzy.warning;
+    fuzzy.label = "WARNING";
   }
-  if (fuzzy.bahaya > maxValue) {
-    fuzzy.label = "BAHAYA";
+  if (fuzzy.danger > maxValue) {
+    fuzzy.label = "DANGER";
   }
 
   return fuzzy;
@@ -162,13 +162,13 @@ void updateStatusOutputs() {
 
   if (strcmp(latestFuzzy.label, "NORMAL") == 0) {
     digitalWrite(LED_GREEN, HIGH);
-  } else if (strcmp(latestFuzzy.label, "WASPADA") == 0) {
+  } else if (strcmp(latestFuzzy.label, "CAUTION") == 0) {
     digitalWrite(LED_YELLOW, HIGH);
   } else {
     digitalWrite(LED_RED, HIGH);
   }
 
-  if (strcmp(latestFuzzy.label, "BAHAYA") == 0 || latestBatteryPercent <= 10.0f) {
+  if (strcmp(latestFuzzy.label, "DANGER") == 0 || latestBatteryPercent <= 10.0f) {
     startBuzzer();
   }
 }
@@ -193,18 +193,18 @@ bool readAndPublishSensor() {
 
   meshRouting.addLocalReadingWithFuzzy(latestTemperature,
                                        latestFuzzy.normal,
-                                       latestFuzzy.waspada,
-                                       latestFuzzy.siaga,
-                                       latestFuzzy.bahaya);
+                                       latestFuzzy.caution,
+                                       latestFuzzy.warning,
+                                       latestFuzzy.danger);
 
-  Serial.printf("DHT11 real: %.1f C, %.1f%% RH, battery %.1f%%, fuzzy N %.3f W %.3f S %.3f B %.3f (%s)\n",
+  Serial.printf("DHT11 real: %.1f C, %.1f%% RH, battery %.1f%%, fuzzy normal %.3f caution %.3f warning %.3f danger %.3f (%s)\n",
                 latestTemperature,
                 latestHumidity,
                 latestBatteryPercent,
                 latestFuzzy.normal,
-                latestFuzzy.waspada,
-                latestFuzzy.siaga,
-                latestFuzzy.bahaya,
+                latestFuzzy.caution,
+                latestFuzzy.warning,
+                latestFuzzy.danger,
                 latestFuzzy.label);
 
   updateStatusOutputs();
@@ -239,14 +239,14 @@ void refreshDisplay() {
 
     display.print("N:");
     display.print(latestFuzzy.normal * 100.0f, 0);
-    display.print(" W:");
-    display.print(latestFuzzy.waspada * 100.0f, 0);
+    display.print(" C:");
+    display.print(latestFuzzy.caution * 100.0f, 0);
     display.println("%");
 
-    display.print("S:");
-    display.print(latestFuzzy.siaga * 100.0f, 0);
-    display.print(" B:");
-    display.print(latestFuzzy.bahaya * 100.0f, 0);
+    display.print("W:");
+    display.print(latestFuzzy.warning * 100.0f, 0);
+    display.print(" D:");
+    display.print(latestFuzzy.danger * 100.0f, 0);
     display.println("%");
 
     drawBatteryIcon(5, 52, (int)latestBatteryPercent);
@@ -279,12 +279,12 @@ void logToSdIfNeeded() {
   dataFile.print(latestFuzzy.label);
   dataFile.print(" Normal:");
   dataFile.print(latestFuzzy.normal);
-  dataFile.print(" Waspada:");
-  dataFile.print(latestFuzzy.waspada);
-  dataFile.print(" Siaga:");
-  dataFile.print(latestFuzzy.siaga);
-  dataFile.print(" Bahaya:");
-  dataFile.print(latestFuzzy.bahaya);
+  dataFile.print(" Caution:");
+  dataFile.print(latestFuzzy.caution);
+  dataFile.print(" Warning:");
+  dataFile.print(latestFuzzy.warning);
+  dataFile.print(" Danger:");
+  dataFile.print(latestFuzzy.danger);
   dataFile.print(" Battery:");
   dataFile.print(latestBatteryPercent);
   dataFile.println("%");

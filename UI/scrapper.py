@@ -46,8 +46,8 @@ SENSOR_MAP = {
 EXTRA_STREAMS = {
     5: ("bme280_kalman.csv", "time,temp", ("temp",)),
     6: ("dht22_battery.csv", "time,battery", ("battery",)),
-    7: ("dht11_fuzzy.csv", "time,normal,waspada,siaga,bahaya",
-        ("normal", "waspada", "siaga", "bahaya"))
+    7: ("dht11_fuzzy.csv", "time,normal,caution,warning,danger",
+        ("normal", "caution", "warning", "danger"))
 }
 
 # =========================================================
